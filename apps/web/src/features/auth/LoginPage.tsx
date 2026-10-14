@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import { z } from 'zod';
@@ -19,13 +19,14 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
-// Seeded demo users (see the seed script). Emails only: the password is never shipped to the browser.
+// Seeded demo users (see the seed script). All share SEED_PASSWORD; this is shown only when SHOW_DEMO is on.
 const DEMO_ACCOUNTS = [
   { email: 'author.acme@example.com', label: 'Author with Acme access' },
   { email: 'author.none@example.com', label: 'Author with no client access' },
   { email: 'reviewer@example.com', label: 'Reviewer with Acme access' },
   { email: 'user@example.com', label: 'Read-only user' },
 ];
+const DEMO_PASSWORD: string = import.meta.env.VITE_DEMO_PASSWORD ?? 'Passw0rd!demo';
 const SHOW_DEMO = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === 'true';
 
 function errorMessage(e: unknown) {
@@ -42,7 +43,6 @@ export function LoginPage() {
   const from = (useLocation().state as { from?: string } | null)?.from ?? '/';
   const login = useLogin();
   const [showPassword, setShowPassword] = useState(false);
-  const passwordRef = useRef<HTMLInputElement | null>(null);
 
   const {
     register,
@@ -55,8 +55,6 @@ export function LoginPage() {
   });
 
   if (me) return <Navigate to={from} replace />;
-
-  const { ref: passwordFormRef, ...passwordField } = register('password');
 
   return (
     <main
@@ -94,11 +92,7 @@ export function LoginPage() {
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
             error={errors.password?.message}
-            {...passwordField}
-            ref={(el) => {
-              passwordFormRef(el);
-              passwordRef.current = el;
-            }}
+            {...register('password')}
           />
           <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-sm text-ink-soft">
             <input
@@ -120,7 +114,7 @@ export function LoginPage() {
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Demo accounts</summary>
           <div className="border-t border-line px-4 py-3">
             <p className="mb-2 text-sm text-ink-soft">
-              Choose one to fill in the email. The password is in the project README.
+              Choose one to fill in the email and password.
             </p>
             <ul className="space-y-1">
               {DEMO_ACCOUNTS.map((a) => (
@@ -129,7 +123,7 @@ export function LoginPage() {
                     type="button"
                     onClick={() => {
                       setValue('email', a.email, { shouldValidate: true });
-                      passwordRef.current?.focus();
+                      setValue('password', DEMO_PASSWORD, { shouldValidate: true });
                     }}
                     className="w-full rounded-md px-2 py-2 text-left text-sm hover:bg-accent-soft"
                   >
