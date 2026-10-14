@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  AUTHOR
+  REVIEWER
+}
+
+enum AuditType {
+  QUESTION_CREATED
+  QUESTION_UPDATED
+  DUPLICATE_REJECTED
+  DUPLICATE_OVERRIDDEN
+}
+
+model AppUser {
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique
+  name          String
+  passwordHash  String         @map("password_hash")
+  role          Role           @default(USER)
+  active        Boolean        @default(true)
+  grants        ClientGrant[]
+  questions     Question[]
+  auditEvents   AuditEvent[]
+  refreshTokens RefreshToken[]
+
+  @@map("app_user")
+}
+
+model Client {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @unique
+  grants    ClientGrant[]
+  questions Question[]
+
+  @@map("client")
+}
+
+// Presence of a row = the user may see that client's questions. PK makes the visibility EXISTS a PK lookup.
+model ClientGrant {
+  userId   String  @map("user_id") @db.Uuid
+  clientId String  @map("client_id") @db.Uuid
+  user     AppUser @relation(fields: [userId], references: [id], onDelete: Restrict)
+  client   Client  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@id([userId, clientId])
+  @@map("client_grant")
+}
+
+model TagCategory {
+  id   String @id @default(uuid()) @db.Uuid
+  slug String @unique
+  name String
+  tags Tag[]
+
+  @@map("tag_category")
+}
+
+model Tag {
+  id         String        @id @default(uuid()) @db.Uuid
+  categoryId String        @map("category_id") @db.Uuid
+  value      String
+  label      String
+  category   TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  questions  QuestionTag[]
+
+  @@unique([categoryId, value])
+  @@map("tag")
+}
+
+model Question {
+  id          String        @id @default(uuid()) @db.Uuid
+  text        String
+  answerNotes String        @default("") @map("answer_notes")
+  authorId    String        @map("author_id") @db.Uuid
+  // Set at creation only; immutable afterwards (IMP-05).
+  clientId    String?       @map("client_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  author      AppUser       @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  client      Client?       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tags        QuestionTag[]
+  auditEvents AuditEvent[]
+
+  // No unique on text: a UNIQUE violation would leak restricted questions (IMP-04).
+  // GIN expression indexes (full-text, trigram) and the non-blank CHECK are in the migration SQL.
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([clientId])
+  @@map("question")
+}
+
+model QuestionTag {
+  questionId String   @map("question_id") @db.Uuid
+  tagId      String   @map("tag_id") @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Restrict)
+
+  @@id([questionId, tagId])
+  @@index([tagId, questionId])
+  @@map("question_tag")
+}
+
+model AuditEvent {
+  id         String    @id @default(uuid()) @db.Uuid
+  type       AuditType
+  actorId    String    @map("actor_id") @db.Uuid
+  at         DateTime  @default(now()) @db.Timestamptz()
+  // Null for DUPLICATE_REJECTED (no question was created).
+  questionId String?   @map("question_id") @db.Uuid
+  payload    Json      @default("{}")
+  actor      AppUser   @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  question   Question? @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@index([questionId, at])
+  @@map("audit_event")
+}
+
+model RefreshToken {
+  id        String    @id @db.Uuid // the JWT jti
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz()
+  user      AppUser   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([familyId])
+  @@map("refresh_token")
+}
