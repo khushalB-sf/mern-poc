@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Db } from '../../db/prisma.js';
+import type { Queryable } from '../../db/prisma.js';
 import { AppError } from '../../http/errors.js';
 
 /** "category:value", lowercase slugs, e.g. technology:react or type:system-design. */
@@ -24,7 +24,7 @@ export const tagListParam = z
  * OR-set, the outer array is AND'ed (ADR-004). Unknown categories/values are a 400.
  * The tag table is global and not sensitive, so naming the bad input leaks nothing.
  */
-export async function resolveTagGroups(db: Db, tags: string[]): Promise<string[][]> {
+export async function resolveTagGroups(db: Queryable, tags: string[]): Promise<string[][]> {
   if (tags.length === 0) return [];
   const wanted = new Map<string, Set<string>>();
   for (const t of tags) {
@@ -53,4 +53,9 @@ export async function resolveTagGroups(db: Db, tags: string[]): Promise<string[]
     groups.push(ids);
   }
   return groups;
+}
+
+/** Flat, de-duplicated tag ids for writes (same validation as filters: unknown tags are a 400). */
+export async function resolveTagIds(db: Queryable, tags: string[]): Promise<string[]> {
+  return [...new Set((await resolveTagGroups(db, tags)).flat())];
 }

@@ -16,10 +16,16 @@
 | T-11 Validation + tag parser | Done | Zod strictObject query schema; unknown category/value/param, bad uuid, limits all 400 |
 | T-12 Visibility search | Done | `question.repo.ts` is the only reader; visibility, filters, FTS and paging in SQL. SEC-04 parameterised over 7 query shapes x 4 unpermitted users, each compared (status, headers, body) with a genuine no-match control, plus permitted-user positive controls |
 | T-13 get-by-id, tags, clients | Done | invisible == nonexistent 404 (identical status, headers, body); `/clients` lists only own grants; `/tags` global, no counts |
-| T-14 … T-27 | Not started | |
+| T-14 Create question | Done | POST with tags, client grant check (ungranted == nonexistent), atomic with audit (trigger-forced failure rolls everything back) |
+| T-15 Duplicate detection | Done | trigram >= 0.6 over *visible* rows; 409 with matches + `DUPLICATE_REJECTED` audit; `confirmNotDuplicate` override recorded; restricted near-duplicates neither flagged nor leaked |
+| T-16 Edit + history | Done | AUTH-03 matrix (12 role/ownership/visibility cells, direct by ID); invisible -> 404 before 403; `clientId` immutable; history hides duplicate-override payloads |
+| T-17 Hardening | Mostly done | architecture-guard test (+ proof the guard bites), route sweep (12/12 routes), per-user rate limit with no RateLimit headers (they would break SEC-04 indistinguishability), unsafe raw SQL banned. helmet/CSP, log redaction, login limit done earlier |
+| T-18 Audit assertions | Done | row + structured log for created / updated / rejected duplicate / overridden, with actor and time |
+| T-20 Perf | Partial | `docs/perf.md`: 19.5 ms combined / 1.3 ms filter at 5k rows, index use confirmed; 10k not done |
+| T-19, T-21 .. T-27 | Not started | web UI, a11y, CI, README, final verification |
 
-**Test run (2026-10-14): 73 passed, 0 failed** (`npm test -w @qb/api`; lint, typecheck, prettier clean).
-**Mutation check:** removing the visibility predicate from search fails 11 tests; removing it from get-by-id fails the IMP-02 test. Both restored, suite green again.
+**Test run (2026-10-14): 145 passed, 0 failed** (`npm test -w @qb/api`; lint, typecheck, prettier clean).
+**Mutation checks (each restored afterwards):** dropping the visibility predicate from search fails 11 tests and from get-by-id fails the IMP-02 test; dropping the edit-permission check fails 5; making the duplicate search see restricted rows fails 2; returning 403 instead of 404 for invisible edits fails 5.
 
 ## Known issues
 - **Disk full on the host** blocks all Docker work (see T-05).
@@ -27,3 +33,7 @@
 - Duplicate-detection performance (for T-15/T-20): on 5k seeded rows the planner picks a Seq Scan for the trigram `%` query (72 ms) although the GIN index answers it in 5.7 ms when forced (`enable_seqscan=off`), because it mis-estimates `%` selectivity. Plan: wrap the dup query in a transaction with `SET LOCAL enable_seqscan = off` and `SET LOCAL pg_trgm.similarity_threshold = 0.6`, then re-measure.
 - `/api/questions` runs two statements (page + count) with the same WHERE instead of the "one statement" in the plan; both carry the visibility predicate. Done so `total` stays correct when the offset is past the end.
 - Search ordering uses `ts_rank` only when a keyword is given; otherwise newest first.
+- Two concurrent identical submissions can both pass the duplicate check (no DB unique constraint by design, IMP-04). Accepted; a later cleanup or reviewer pass handles it.
+- The duplicate rule has a real false positive: "How would you design a cache in Node.js?" scores 0.64 against "...a rate limiter in Node.js?" and is flagged. Reordered words score 1.00 (trigram ignores order); a typo variant scores 0.74. The override path exists for exactly this.
+- Duplicate check runs on create only, not on edit.
+- Concurrent edits are last-write-wins (no version check).

@@ -7,7 +7,7 @@
  * An architecture-guard test fails if any other file references the table.
  */
 import { Prisma } from '../../generated/prisma/client.js';
-import type { Db } from '../../db/prisma.js';
+import type { Db, Queryable } from '../../db/prisma.js';
 
 export interface Actor {
   id: string;
@@ -63,7 +63,7 @@ const SELECT = Prisma.sql`
   JOIN app_user u ON u.id = q.author_id
   LEFT JOIN client c ON c.id = q.client_id`;
 
-async function withTags(db: Db, rows: Row[]): Promise<QuestionView[]> {
+async function withTags(db: Queryable, rows: Row[]): Promise<QuestionView[]> {
   const tagRows = rows.length
     ? await db.$queryRaw<{ questionId: string; category: string; value: string }[]>`
         SELECT qt.question_id AS "questionId", tc.slug AS category, t.value
@@ -91,7 +91,7 @@ async function withTags(db: Db, rows: Row[]): Promise<QuestionView[]> {
   }));
 }
 
-export async function searchQuestions(db: Db, actor: Actor, f: SearchFilters) {
+export async function searchQuestions(db: Queryable, actor: Actor, f: SearchFilters) {
   const conditions = [visible(actor)];
   if (f.clientId) conditions.push(Prisma.sql`q.client_id = ${f.clientId}::uuid`);
   if (f.q) {
@@ -117,7 +117,91 @@ export async function searchQuestions(db: Db, actor: Actor, f: SearchFilters) {
 }
 
 /** null when the question does not exist OR the actor may not see it (callers must not distinguish). */
-export async function getVisibleQuestion(db: Db, actor: Actor, id: string) {
+export async function getVisibleQuestion(db: Queryable, actor: Actor, id: string) {
   const rows = await db.$queryRaw<Row[]>`${SELECT} WHERE q.id = ${id}::uuid AND ${visible(actor)}`;
   return (await withTags(db, rows))[0] ?? null;
+}
+
+// Must match the expression index `question_text_trgm_idx` exactly.
+const NORMALISED_TEXT = Prisma.raw(
+  `btrim(regexp_replace(lower(q."text"), '[^[:alnum:]]+', ' ', 'g'))`,
+);
+const normalised = (text: string) =>
+  Prisma.sql`btrim(regexp_replace(lower(${text}::text), '[^[:alnum:]]+', ' ', 'g'))`;
+
+export type SimilarQuestion = { id: string; text: string; similarity: number };
+
+/**
+ * Near-duplicates of `text` among the questions the actor can see (ADR-007). Restricted questions
+ * the actor cannot see are never compared, so they can never be hinted at.
+ */
+export async function findSimilarQuestions(
+  db: Db,
+  actor: Actor,
+  text: string,
+  threshold: number,
+  limit = 5,
+): Promise<SimilarQuestion[]> {
+  return db.$transaction(async (tx) => {
+    // `%` uses pg_trgm.similarity_threshold; set it locally so the index prefilter matches our rule.
+    await tx.$queryRaw`SELECT set_config('pg_trgm.similarity_threshold', ${String(threshold)}, true)`;
+    // ponytail: the planner mis-estimates `%` selectivity and seq-scans (72 ms at 5k rows vs 6 ms via the
+    // GIN index). Forcing the index is fine at POC scale; revisit with real statistics on a big table.
+    await tx.$queryRaw`SELECT set_config('enable_seqscan', 'off', true)`;
+    const rows = await tx.$queryRaw<SimilarQuestion[]>`
+      SELECT q.id, q."text", similarity(${NORMALISED_TEXT}, ${normalised(text)})::float8 AS similarity
+      FROM question q
+      WHERE ${visible(actor)}
+        AND ${NORMALISED_TEXT} % ${normalised(text)}
+        AND similarity(${NORMALISED_TEXT}, ${normalised(text)}) >= ${threshold}::float4
+      ORDER BY similarity DESC, q.id
+      LIMIT ${limit}::int`;
+    return rows;
+  });
+}
+
+export async function insertQuestion(
+  db: Queryable,
+  data: {
+    text: string;
+    answerNotes: string;
+    authorId: string;
+    clientId: string | null;
+    tagIds: string[];
+  },
+) {
+  const row = await db.question.create({
+    data: {
+      text: data.text,
+      answerNotes: data.answerNotes,
+      authorId: data.authorId,
+      clientId: data.clientId,
+      tags: { create: data.tagIds.map((tagId) => ({ tagId })) },
+    },
+    select: { id: true },
+  });
+  return row.id;
+}
+
+/** Applies a partial edit. `tagIds`, when given, replaces the question's tag set. */
+export async function updateQuestionRow(
+  db: Queryable,
+  id: string,
+  data: {
+    text?: string | undefined;
+    answerNotes?: string | undefined;
+    tagIds?: string[] | undefined;
+  },
+) {
+  await db.question.update({
+    where: { id },
+    data: {
+      ...(data.text !== undefined && { text: data.text }),
+      ...(data.answerNotes !== undefined && { answerNotes: data.answerNotes }),
+      updatedAt: new Date(), // also bumps on tag-only edits
+      ...(data.tagIds !== undefined && {
+        tags: { deleteMany: {}, create: data.tagIds.map((tagId) => ({ tagId })) },
+      }),
+    },
+  });
 }

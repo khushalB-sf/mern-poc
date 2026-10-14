@@ -1,7 +1,8 @@
 import type { RequestHandler } from 'express';
 import type { Db } from '../../db/prisma.js';
 import type { Config } from '../../config/env.js';
-import { unauthorized } from '../../http/errors.js';
+import { forbidden, unauthorized } from '../../http/errors.js';
+import type { Role } from '../../generated/prisma/enums.js';
 import { ACCESS_COOKIE } from './cookies.js';
 import { verifyAccess } from './tokens.js';
 
@@ -25,3 +26,11 @@ export function requireAuth(db: Db, config: Config): RequestHandler {
     next();
   };
 }
+
+/** Role gate; run after requireAuth. */
+export const requireRole =
+  (...roles: Role[]): RequestHandler =>
+  (req, _res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) throw forbidden();
+    next();
+  };

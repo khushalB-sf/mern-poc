@@ -26,6 +26,8 @@ const schema = z.object({
   // false by default: Safari drops Secure cookies on http://localhost.
   COOKIE_SECURE: bool.default(false),
   RATE_LIMIT_LOGIN_PER_MIN: z.coerce.number().int().min(1).default(5),
+  // Per authenticated user, across the questions API (search is debounced in the UI, so this is generous).
+  RATE_LIMIT_API_PER_MIN: z.coerce.number().int().min(1).default(120),
   SEED_ON_START: bool.default(false),
   SEED_PASSWORD: z.string().min(8).default('Passw0rd!demo'),
 });
