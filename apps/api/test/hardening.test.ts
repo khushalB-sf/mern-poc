@@ -4,7 +4,15 @@ import { fileURLToPath } from 'node:url';
 import type { Router } from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildWorld, cookieFor, makeApp, makeDb, resetDb, type World } from './helpers.js';
+import {
+  MANIFEST,
+  buildWorld,
+  cookieFor,
+  makeApp,
+  makeDb,
+  resetDb,
+  type World,
+} from './helpers.js';
 
 const db = makeDb();
 let world: World;
@@ -70,22 +78,11 @@ const PUBLIC = new Set([
   'POST /api/auth/login',
   'POST /api/auth/refresh',
   'POST /api/auth/logout',
+  // API docs describe the contract only and carry no data.
+  'GET /api/openapi.json',
+  'GET /api/docs',
+  'GET /api/docs/init.js',
 ]);
-const UUID = '11111111-1111-4111-8111-111111111111';
-const MANIFEST: [method: 'get' | 'post' | 'patch', path: string][] = [
-  ['get', '/api/health'],
-  ['post', '/api/auth/login'],
-  ['post', '/api/auth/refresh'],
-  ['post', '/api/auth/logout'],
-  ['get', '/api/auth/me'],
-  ['get', '/api/tags'],
-  ['get', '/api/clients'],
-  ['get', '/api/questions'],
-  ['get', `/api/questions/${UUID}`],
-  ['get', `/api/questions/${UUID}/history`],
-  ['post', '/api/questions'],
-  ['patch', `/api/questions/${UUID}`],
-];
 
 /** Counts every (route, method) registered anywhere under the router, however deeply nested. */
 function countRoutes(router: Router): number {

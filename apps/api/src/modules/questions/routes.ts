@@ -36,7 +36,7 @@ const text = z.string().trim().min(1).max(1000);
 const answerNotes = z.string().max(10_000);
 const tags = z.array(tagString).max(30);
 
-const createSchema = z.strictObject({
+export const createSchema = z.strictObject({
   text,
   answerNotes: answerNotes.default(''),
   clientId: z.uuid().optional(),
@@ -45,7 +45,7 @@ const createSchema = z.strictObject({
 });
 
 // No clientId here on purpose: a question's client is fixed at creation (IMP-05).
-const patchSchema = z
+export const patchSchema = z
   .strictObject({
     text: text.optional(),
     answerNotes: answerNotes.optional(),

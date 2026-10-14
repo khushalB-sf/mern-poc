@@ -10,6 +10,7 @@ import { authRoutes } from '../modules/auth/routes.js';
 import { clientRoutes } from '../modules/clients/routes.js';
 import { questionRoutes } from '../modules/questions/routes.js';
 import { tagRoutes } from '../modules/tags/routes.js';
+import { docsRoutes } from '../docs/routes.js';
 import { originCheck } from './csrf.js';
 import { errorHandler, notFoundHandler } from './errors.js';
 
@@ -55,6 +56,7 @@ export function createApp({ config, logger, db }: AppDeps): Express {
       res.status(503).json({ status: 'unavailable' });
     }
   });
+  if (config.DOCS_ENABLED) api.use(docsRoutes());
   api.use('/auth', authRoutes(db, config));
   api.use('/questions', questionRoutes(db, config));
   api.use('/tags', tagRoutes(db, config));

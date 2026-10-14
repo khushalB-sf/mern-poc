@@ -128,3 +128,24 @@ export async function addQuestion(
     },
   });
 }
+
+const UUID = '11111111-1111-4111-8111-111111111111';
+
+/** Every route the app registers. A test fails if a route is added and not listed here (route sweep). */
+export const MANIFEST: [method: 'get' | 'post' | 'patch', path: string][] = [
+  ['get', '/api/health'],
+  ['get', '/api/openapi.json'],
+  ['get', '/api/docs'],
+  ['get', '/api/docs/init.js'],
+  ['post', '/api/auth/login'],
+  ['post', '/api/auth/refresh'],
+  ['post', '/api/auth/logout'],
+  ['get', '/api/auth/me'],
+  ['get', '/api/tags'],
+  ['get', '/api/clients'],
+  ['get', '/api/questions'],
+  ['get', `/api/questions/${UUID}`],
+  ['get', `/api/questions/${UUID}/history`],
+  ['post', '/api/questions'],
+  ['patch', `/api/questions/${UUID}`],
+];

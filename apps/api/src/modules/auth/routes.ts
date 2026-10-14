@@ -8,7 +8,7 @@ import { REFRESH_COOKIE, clearAuthCookies, setAuthCookies } from './cookies.js';
 import { requireAuth } from './middleware.js';
 import { createAuthService } from './service.js';
 
-const loginSchema = z.object({
+export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
   // Upper bound keeps Argon2 from being used as a CPU-exhaustion lever.
   password: z.string().min(1).max(200),
