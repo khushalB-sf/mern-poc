@@ -23,9 +23,14 @@
 | T-18 Audit assertions | Done | row + structured log for created / updated / rejected duplicate / overridden, with actor and time |
 | T-20 Perf | Partial | `docs/perf.md`: 19.5 ms combined / 1.3 ms filter at 5k rows, index use confirmed; 10k not done |
 | API docs (Swagger UI) | Done | `/api/docs` + `/api/openapi.json` (OpenAPI 3.1). Request bodies generated from the Zod schemas; a test fails if any route is missing from the spec or the spec lists a route that does not exist. Page renders under the strict CSP (checked with headless Chrome). **Not verified in a browser:** the Try-it-out login-then-call cookie flow (server side covered by a same-origin test) |
-| T-19, T-21 .. T-27 | Not started | web UI, a11y, CI, README, final verification |
+| T-19 Web scaffold + nginx + `web` service | Done | Vite 8 / React 19 / Router 8 / TanStack Query 5 / RHF + Zod / Tailwind 4. nginx serves the build and proxies `/api` (single origin), unprivileged, strict CSP. Stack healthy; login, cookies, CSRF Origin check, search verified through `:3000` |
+| T-21 List UI | Done | URL-synced filters and keyword (shareable, Back-safe), debounced search, removable filter chips, skeleton / empty / error / refreshing states, pagination, mobile filter sheet, restricted-question marking |
+| T-22 Form / detail UI | Done | add + edit form (RHF + Zod, counters, inline and server field errors, focus to first error), duplicate dialog with side-by-side comparison and similarity bar, detail with history, role-aware controls, neutral not-found |
+| T-23 Accessibility | Done | axe-core in unit tests (9 screen states) and in **real Chrome on the production build, light and dark, 8 screens each, incl. colour contrast: 0 violations**. Native dialog / fieldset / checkbox semantics, skip link, focus management, reduced motion respected. `eslint-plugin-jsx-a11y` could not be used (it does not support ESLint 10) |
+| T-24 CI, T-25 Playwright | Not started (cuttable) | Real-browser checks were done with puppeteer-core scripts kept outside the repo |
+| T-26 README / walkthrough, T-27 final verification | Not started | |
 
-**Test run (2026-10-14): 154 passed, 0 failed** (`npm test -w @qb/api`; lint, typecheck, prettier clean).
+**Test run (2026-10-14): API 154 passed, web 63 passed, 0 failed** (`npm test -w @qb/api`; lint, typecheck, prettier clean).
 **Mutation checks (each restored afterwards):** dropping the visibility predicate from search fails 11 tests and from get-by-id fails the IMP-02 test; dropping the edit-permission check fails 5; making the duplicate search see restricted rows fails 2; returning 403 instead of 404 for invisible edits fails 5.
 
 ## Known issues
@@ -38,3 +43,6 @@
 - The duplicate rule has a real false positive: "How would you design a cache in Node.js?" scores 0.64 against "...a rate limiter in Node.js?" and is flagged. Reordered words score 1.00 (trigram ignores order); a typo variant scores 0.74. The override path exists for exactly this.
 - Duplicate check runs on create only, not on edit.
 - Concurrent edits are last-write-wins (no version check).
+- Web bundle is one 506 kB JS file (156 kB gzipped). Route-level code splitting would shrink the first load; not done.
+- The Try-it-out cookie flow in Swagger is still untested in a real browser (UI login flow is).
+- Login page demo accounts show emails only (never the password) and are controlled by `VITE_SHOW_DEMO_ACCOUNTS` (build-time, default true in compose).

@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -15,6 +16,15 @@ export default tseslint.config(
           message: 'Unsafe raw SQL is banned. Use the $queryRaw tagged template.',
         },
       ],
+    },
+  },
+  {
+    // Rules of Hooks and exhaustive deps for the React app.
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
 );

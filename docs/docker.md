@@ -11,7 +11,7 @@ Marks: ✅ = I ran it in this project and saw the stated result; 📝 = standard
 | 4 | Start detached | `docker compose up -d` ✅ | Containers start in the background; `api` waits until `db` is healthy. | keeps |
 | 5 | What is running? | `docker compose ps` ✅ | `db` and `api` show `(healthy)`. | keeps |
 | 6 | Logs | `docker compose logs -f api` (omit `-f` to just print) ✅ | JSON log lines; migrations output at the top. Ctrl-C leaves containers running. | keeps |
-| 7 | Reach the services | API: `curl -i localhost:4000/api/health` ✅ → `200 {"status":"ok"}`. API docs (Swagger UI): `http://localhost:4000/api/docs` ✅, raw spec `/api/openapi.json`. Web UI: `http://localhost:3000` (added in T-19). | | keeps |
+| 7 | Reach the services | API: `curl -i localhost:4000/api/health` ✅ → `200 {"status":"ok"}`. API docs (Swagger UI): `http://localhost:4000/api/docs` ✅, raw spec `/api/openapi.json`. Web UI: `http://localhost:3000` ✅ (nginx serves the UI and proxies `/api` to the API). | | keeps |
 | 8 | DB ready? | `docker compose exec db pg_isready -U qb -d qb` 📝 and `docker compose exec db psql -U qb -d qb -c '\dt'` ✅ | `accepting connections`; table list. | keeps |
 | 9 | Migrations / seed | Migrations run automatically on every `api` start (idempotent). Manually: `docker compose exec api ../../node_modules/.bin/prisma migrate deploy` 📝. Seed: with `SEED_ON_START=true` it runs on start when the DB is empty (added in T-07). | "No pending migrations to apply." | keeps |
 | 10 | Stop | `docker compose stop` 📝 | Containers stop; they and the volume remain. | keeps |
@@ -24,7 +24,7 @@ Marks: ✅ = I ran it in this project and saw the stated result; 📝 = standard
 
 | Service | Host port | Why |
 |---|---|---|
-| web | 3000 | the one URL users need |
+| web | 3000 | the one URL users need (`WEB_HOST_PORT`; nginx listens on 8080 inside the container) |
 | api | 4000 | curl and tests (`API_HOST_PORT`) |
 | db | 5436 | `POSTGRES_HOST_PORT`; 5432-5435 were already used by other local Postgres containers on the dev machine |
 

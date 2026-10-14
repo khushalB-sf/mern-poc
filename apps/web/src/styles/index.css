@@ -1,0 +1,107 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/source-serif-4';
+
+/*
+  Design tokens. Paper and ink for reading; petrol for actions; amber is reserved for one meaning only:
+  "restricted to a client". Dark values follow the system setting.
+*/
+:root {
+  color-scheme: light dark;
+  --paper: #f4f6f5;
+  --surface: #ffffff;
+  --ink: #14212b;
+  --ink-soft: #4a5b67;
+  --line: #d8dfdd;
+  --control: #6f807b;
+  --accent: #0e5a64;
+  --accent-hover: #0a474f;
+  --accent-ink: #ffffff;
+  --accent-soft: #e1f0f0;
+  --restricted-ink: #92400e;
+  --restricted-bg: #fef3c7;
+  --restricted-edge: #d97706;
+  --danger: #b42318;
+  --danger-bg: #fee4e2;
+  --ok: #067647;
+  --cat-technology: #0e7c86;
+  --cat-seniority: #7a5bbf;
+  --cat-type: #5b6f7c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0e161b;
+    --surface: #141f26;
+    --ink: #e7eef1;
+    --ink-soft: #9fb1bb;
+    --line: #25343d;
+    --control: #6c8491;
+    --accent: #4fb6bd;
+    --accent-hover: #6fc7cd;
+    --accent-ink: #06262a;
+    --accent-soft: #17353a;
+    --restricted-ink: #fcd34d;
+    --restricted-bg: #3a2a08;
+    --restricted-edge: #f59e0b;
+    --danger: #f97066;
+    --danger-bg: #3b1613;
+    --ok: #4ade80;
+    --cat-technology: #4fb6bd;
+    --cat-seniority: #b69cf0;
+    --cat-type: #8da3b0;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-control: var(--control);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-restricted-ink: var(--restricted-ink);
+  --color-restricted-bg: var(--restricted-bg);
+  --color-restricted-edge: var(--restricted-edge);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-ok: var(--ok);
+  --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+  dialog::backdrop {
+    background: rgb(10 20 26 / 0.55);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}

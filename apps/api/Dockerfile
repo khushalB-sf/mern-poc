@@ -3,6 +3,7 @@ FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
 RUN npm ci -w @qb/api
 COPY tsconfig.base.json ./
 COPY apps/api apps/api
@@ -16,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
 # Production deps only. `prisma` is a runtime dep because the entrypoint runs `migrate deploy`.
 RUN npm ci -w @qb/api --omit=dev && npm cache clean --force
 COPY --from=build /app/apps/api/dist apps/api/dist
