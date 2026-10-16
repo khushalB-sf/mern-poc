@@ -1,6 +1,6 @@
 # Stage 3 — Architecture, API Contract, Data Model, Security
 
-Status: **DRAFT for review. No implementation code exists.** Decisions referenced (D#, ADR-#) are in `02-technology-selection.md`.
+Status: **Implemented (T-01..T-23). Written before the code and corrected against the code on 2026-10-16; where the build differs from the original plan the text says so.** Decisions referenced (D#, ADR-#) are in `02-technology-selection.md`. What is verified: `05-progress.md`.
 
 ## 1. System architecture
 
@@ -17,19 +17,22 @@ Data flow: the browser only ever talks to nginx. Cookies are therefore first-par
 ## 2. Backend layout (`apps/api/src`)
 
 ```
-config/        env parsing (Zod), fails fast on bad .env
-http/          app.ts, middleware: requestId, logger, auth, csrfOrigin, validate, rateLimit, errorHandler
-modules/
-  auth/        routes, service (login/refresh/logout), token helpers
-  questions/   routes, service, question.repo.ts  <- ONLY file that reads `question`
-  tags/        routes (GET /tags), tagParser
-  audit/       audit.repo.ts (write inside caller's transaction)
-db/            prisma client, raw-SQL helpers
-test/          setup, fixtures, integration tests
-prisma/        schema.prisma, migrations/, seed.ts
+src/config/    env parsing (Zod), fails fast on bad .env
+src/http/      app.ts (request id + pino-http + helmet + body/cookie parsing), csrf.ts (Origin check), validate.ts, errors.ts
+src/modules/
+  auth/        routes (login rate limit), service (login/refresh/logout), tokens, cookies, password, middleware (requireAuth/requireRole)
+  questions/   routes (per-user rate limit), service, question.repo.ts  <- ONLY file that reads the question tables
+  tags/        routes (GET /tags), tags.ts (tag string parser + category:value -> ids)
+  clients/     routes (GET /clients: only the caller's grants)
+  audit/       audit.repo.ts (write inside the caller's transaction; history read)
+src/docs/      openapi.ts (OpenAPI 3.1 built from the Zod schemas), routes.ts (Swagger UI + spec)
+src/db/        prisma client (driver adapter)
+src/seed/      deterministic seed (data.ts, seed.ts, run.ts)
+prisma/        schema.prisma, migrations/ (hand-written SQL for the GIN indexes and the CHECK)
+test/          globalSetup (creates and migrates qb_test), helpers/fixture world, integration tests
 ```
 
-Layers: **route** (wire + `validate(schema)`), **service** (business rules, transactions, audit), **repo** (SQL). No separate controller layer: route handlers are 5-10 lines, so a controller would only rename them.
+Layers: **route** (wire + `validate(schema)`), **service** (business rules, transactions, audit), **repo** (SQL). No separate controller layer: route handlers are 5-10 lines, so a controller would only rename them. Rate limiting is applied inside the auth and questions routers, not in `http/`.
 
 ### Request lifecycle (`GET /api/questions?q=closure&tags=technology:react`)
 
@@ -46,21 +49,23 @@ sequenceDiagram
   M->>M: validate query (Zod): unknown category => 400
   M->>S: search(actor, filters)
   S->>R: search(actor, filters)
-  R->>D: ONE statement: visibility + tag EXISTS + tsquery + LIMIT
-  D-->>R: rows (+ window count)
+  R->>D: page query: visibility + tag EXISTS + tsquery + LIMIT/OFFSET
+  R->>D: count query: same WHERE (run in parallel)
+  D-->>R: rows, total
   R-->>S: items, total
   S-->>C: 200 {items, page}
 ```
 
-Order matters: **auth → validate → authorize → service**. Validation runs before business logic (SEC-01); the integration test spies on the service to prove it is not called on a 400.
+Order matters: **auth → validate → authorize → service**. Validation runs before business logic (SEC-01). For `POST /questions` the role gate runs before body validation (a read-only user gets 403 whatever the body); `PATCH` validates, then the service checks visibility and then role. The original plan was to prove SEC-01 by spying on the service; the tests instead assert that each bad input is a 400 **and nothing was written** (`questions.write.test.ts`, `visibility.test.ts`). The page and count queries both carry the visibility predicate; the plan said "one statement", but two keep `total` correct when the offset is past the end.
 
 ## 3. API contract
 
-Base path `/api`. JSON only. All routes except `login`, `refresh`, `health` require a valid access cookie (401 otherwise; SEC-02).
+Base path `/api`. JSON only. All routes except `login`, `refresh`, `logout`, `health` and the docs require a valid access cookie (401 otherwise; SEC-02). Success bodies wrap the resource: `GET/POST/PATCH /questions...` return `{question}`; `GET /questions/:id/history` returns `{items:[{id,type,at,actor:{id,name},changes?}]}` (`changes` only on `QUESTION_UPDATED`). The questions API also has a per-user rate limit (default 120/min, `RATE_LIMIT_API_PER_MIN`) that returns 429 `RATE_LIMITED` and deliberately sends no `RateLimit-*` headers, since a decrementing counter would make hidden and genuinely empty search responses differ (SEC-04).
 
 | Method | Route | Purpose | Auth / authorization | Success | Errors |
 |---|---|---|---|---|---|
 | GET | `/health` | liveness + DB ping | none | 200 `{status:"ok"}` | 503 |
+| GET | `/docs`, `/openapi.json` | Swagger UI and the OpenAPI 3.1 spec (contract only, no data); on unless `DOCS_ENABLED=false` | none | 200 | |
 | POST | `/auth/login` | email + password → cookies | none; rate-limited 5/min per IP+email | 200 `{user}` + 2 cookies | 400, 401 (same body for bad email/password), 429 |
 | POST | `/auth/refresh` | rotate refresh token → new cookies | refresh cookie | 204 + cookies | 401 (reuse revokes family) |
 | POST | `/auth/logout` | revoke family, clear cookies | refresh cookie (idempotent) | 204 | |
@@ -166,7 +171,7 @@ erDiagram
 
 **No generated columns.** The spike (ADR-003) showed Prisma reports drift on generated columns, so search and trigram use expression indexes and `question.repo.ts` repeats the identical expressions. Implemented as `apps/api/prisma/migrations/*_init`; `prisma migrate diff` reports no drift.
 
-**Migrations / seed:** `prisma migrate deploy` on API start. Seed is deterministic (seeded PRNG, no faker dependency): users (1 USER, 2 AUTHOR, 1 REVIEWER, plus one author with no client grants), 2 clients with different grant sets, ~12 categories-worth of tags in 3 named categories (technology, seniority, type) for the demo, 5,000 generated questions, and a handful of **named fixtures** with unique marker keywords for the demo and tests. Seed refuses to run on a non-empty DB unless forced.
+**Migrations / seed:** `prisma migrate deploy` on API start. Seed is deterministic (seeded PRNG, no faker dependency): 7 users (2 USER, 4 AUTHOR, 1 REVIEWER; one of the authors and one USER have no client grants, one author has both clients), 2 clients (Acme Corp, Globex) with different grant sets, 21 tags in 3 categories (technology 12, seniority 4, type 5), 5,000 generated questions (~10% client-restricted) plus 4 **named fixtures** with unique marker keywords (`capybara` global, `zebrafish` Acme, `narwhal` Globex, and a `let/const/var` question for the duplicate demo) = 5,004. The seed has no force flag: it refuses to run on a non-empty DB (`--if-empty` makes that a silent skip, used on container start).
 
 **Retention:** audit and refresh-token tables grow unbounded; a cleanup of expired refresh tokens is noted as future work.
 
@@ -175,35 +180,36 @@ erDiagram
 | Concern | Control |
 |---|---|
 | A01 Broken access control | Visibility in SQL (ADR-005); role checks in service; 404-not-403 for invisible; architecture-guard test; route sweep |
-| A02 Crypto / secrets | Argon2id; two independent JWT secrets from `.env`; `.env` git-ignored, `.env.example` committed; startup fails if secrets < 32 chars |
+| A02 Crypto / secrets | Argon2id; two independent JWT secrets from `.env`; `.env` git-ignored, `.env.example` committed; startup fails if secrets < 32 chars, if the two are equal, or if `COOKIE_SECURE=true` with the committed `dev-only` placeholders. Caveat: the login page's Demo accounts panel puts the demo password in the web bundle when `VITE_SHOW_DEMO_ACCOUNTS=true` (default in compose); local demo only |
 | A03 Injection | Only bound parameters (`$queryRaw` tagged templates); `$queryRawUnsafe` banned by lint; Zod on every input |
 | A04 Insecure design | Threat: probing existence via search, ID, counts, errors, duplicates (IMP-01..08) |
 | A05 Misconfiguration | `helmet`, no stack traces in prod errors, `x-powered-by` off, minimal Docker images, non-root user |
 | A07 Auth failures | Short access TTL, rotating refresh with reuse detection, rate limit + uniform login errors, timing-equalised unknown user |
-| A08 Integrity | Pinned deps, lockfile, `npm audit` in CI |
+| A08 Integrity | Pinned deps, lockfile. `npm audit` is run by hand (no CI): 4 high findings via the `prisma` CLI's transitive deps, see `05-progress.md` |
 | A09 Logging | pino; redact `cookie`, `set-cookie`, `password`, tokens; log who/what/when for audit events |
 | CSRF | Strict cookies + same-origin + Origin check (ADR-006) |
-| XSS | React escapes by default; no `dangerouslySetInnerHTML`; answer notes rendered as plain text; CSP via helmet (`default-src 'self'`); tokens not readable by JS |
+| XSS | React escapes by default; no `dangerouslySetInnerHTML`; answer notes rendered as plain text; CSP set by helmet on the API and by nginx (`security-headers.inc`) on the UI, both `default-src 'self'`-based; tokens not readable by JS |
 
 Known limitations to document: timing side channels (A15); refresh race across tabs; HS256 shared secret; no account lockout beyond rate limiting.
 
 ## 6. Frontend architecture (`apps/web/src`)
 
 ```
-app/         router, providers (QueryClient), auth guard
+app/         AppShell, routes, queryClient, pages (not-found / route error)
 features/
-  auth/      LoginPage, useMe, apiFetch (single-flight refresh)
-  questions/ QuestionListPage, FilterPanel, QuestionCard, QuestionFormPage, DuplicateDialog, HistoryPanel, api + hooks
-shared/      Button, Field, Dialog, Skeleton, EmptyState, ErrorState, Toast
+  auth/      LoginPage, RequireAuth, api + hooks (useMe, useLogin, canEdit)
+  questions/ QuestionListPage, QuestionDetailPage, QuestionFormPage, QuestionForm, filters.ts, api + hooks
+    components/  FilterPanel, TagPicker, QuestionRow, Pagination, chips, DuplicateDialog, HistoryList
+shared/      api/client.ts (apiFetch, single-flight refresh), ui/ (Button, Field, Dialog, Icon, Toast, states.tsx for skeleton/empty/error), hooks/, lib/
 ```
-Routing: `/login`, `/` (list), `/questions/new`, `/questions/:id` (detail + history, edit if allowed). Server state only in TanStack Query; URL is the state for filters. Forms: React Hook Form + the same Zod schemas shape as the API.
+Routing: `/login`, `/` (list), `/questions/new`, `/questions/:id` (detail + history), `/questions/:id/edit`; the controls to edit show only when `canEdit` allows (cosmetic: the API enforces). Server state only in TanStack Query; URL is the state for filters. Forms: React Hook Form + Zod schemas mirroring the API's.
 
 ## 7. Docker and ports
 
 | Service | Container port | Host port | Notes |
 |---|---|---|---|
-| web (nginx) | 80 | 3000 | the only URL users need |
+| web (nginx-unprivileged) | 8080 | 3000 | the only URL users need |
 | api | 4000 | 4000 | exposed for curl/tests |
 | db | 5432 | 5436 | host side moved to avoid a local Postgres on 5432 |
 
-`.env.example` keys: `POSTGRES_USER/PASSWORD/DB`, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_SECURE` (default `false`: Safari drops `Secure` cookies on http://localhost), `SEED_ON_START`, `SEED_PASSWORD`. The full Docker command catalogue (§9 of your prompt) is delivered with the Docker task T-05, with macOS-tested commands.
+`.env.example` keys: `POSTGRES_USER/PASSWORD/DB`, `POSTGRES_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`, `DATABASE_URL` (host-side only), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_SECURE` (default `false`: Safari drops `Secure` cookies on http://localhost), `SEED_ON_START`, `SEED_PASSWORD`, `VITE_SHOW_DEMO_ACCOUNTS`. Optional, not in `.env.example`: `DOCS_ENABLED` (default true), `RATE_LIMIT_LOGIN_PER_MIN` (5), `RATE_LIMIT_API_PER_MIN` (120), `LOG_LEVEL`, `PORT`. The Docker command catalogue is `docs/docker.md`.

@@ -1,16 +1,16 @@
 # Interview Question Bank — Stage 1: Requirements Analysis
 
-Status: **Stage 1 complete. The §8 decisions are now closed: see the decision log in `02-technology-selection.md` §1. Requirement → task mapping is in `04-task-plan.md` (the "Implementation area" column below uses phase names only).**
+Status: **Stage 1 analysis, kept as the original record. The §8 decisions are closed: see the decision log in `02-technology-selection.md` §1. Requirement → task mapping is in `04-task-plan.md`; what is built and verified is in `05-progress.md`. Corrections made on 2026-10-16 to match the build are marked "Built:" or "At Stage 1".**
 Source: `Khushal-interview-question-bank.md` (the POC brief). Stack fixed by the brief: PostgreSQL + Prisma; Express *or* Next.js is open.
 
 ---
 
-## 0. Materials and environment (what I actually checked)
+## 0. Materials and environment (what I actually checked, at Stage 1; the repo has since been built)
 
 | Item | Finding |
 |---|---|
 | POC brief | Provided inline in the chat (all 8 sections read). No other files were supplied. |
-| Project directory | `interview-qb/` is **empty and not a git repo**. Nothing is scaffolded. |
+| Project directory | At Stage 1, `interview-qb/` was **empty and not a git repo**. It is now a git repo with the API, web UI and Docker setup built (T-01..T-23). |
 | Docker | Client 28.4.0, daemon running (Docker Desktop), Compose v2.39.4. |
 | Node | v22.19.0 (current LTS line). |
 | Not accessed | The second workspace folder (LMNL teacher-directory) is unrelated; I did not open it. |
@@ -45,7 +45,7 @@ Classification key: **E** = explicit in brief · **I** = implied by the brief ·
 | FR-01 | Create a question with question text, answer notes, tags (§3.1) | E | Critical | `POST /questions` with valid body → 201; row + tags persisted | Core features | API integration test |
 | FR-02 | Many tags per category, many categories per question; a tag applies to many questions (§3.1, §4) | E | Critical | Question with 2 technology + 1 seniority tag round-trips intact | DB schema, Core | Integration test + schema review |
 | FR-03 | Filter: any combination of categories, multi-value within a category (OR within, AND across) (§3.2) | E | Critical | `tech∈{React,Node} AND seniority∈{Mid,Senior}` returns exactly the matching set | Core (search) | Integration test on seeded data |
-| FR-04 | Filter executes in the database as one query, not client-side/in-memory (§3.2, §6) | E | Critical | No code path loads the full table; `EXPLAIN` shows index use | Core (search), Perf | Query-plan check + code review |
+| FR-04 | Filter executes in the database as one query, not client-side/in-memory (§3.2, §6) | E | Critical | No code path loads the full table; `EXPLAIN` shows index use. Built: filter + keyword + visibility are one `WHERE`; the page and the count are two statements sharing it | Core (search), Perf | Query-plan check + code review |
 | FR-05 | Keyword search over question text **and** answer notes (§3.3) | E | Critical | Keyword present only in notes still matches | Core (search) | Integration test |
 | FR-06 | Keyword + filters compose in one query (§3.2–3.3, §6) | I | High | Combined request returns the intersection | Core (search) | Integration test |
 | FR-07 | Client-restricted questions visible only to users with a grant for that client (§3.4) | E | Critical | See SEC-04 | DB schema, Core | SEC-04 test |
@@ -65,7 +65,7 @@ Classification key: **E** = explicit in brief · **I** = implied by the brief ·
 
 | ID | Requirement | Cat. | Pri. | Acceptance criteria | Impl. area | Verification |
 |---|---|---|---|---|---|---|
-| SEC-01 | Bad input rejected **before business logic**: empty text, nonexistent tag category, missing auth on edit (§6) | E | Critical | Schema validation middleware returns 400/401 and the service layer is never invoked | Backend foundation | Validation tests (spy on service) |
+| SEC-01 | Bad input rejected **before business logic**: empty text, nonexistent tag category, missing auth on edit (§6) | E | Critical | Schema validation middleware returns 400/401 before the service runs | Backend foundation | Validation tests assert 400 and nothing written (Built: no service spy) |
 | SEC-02 | No anonymous path; every add/edit/search tied to an authenticated user (§6) | E | Critical | All routes except login/health return 401 without a valid credential | Auth | Route-sweep test: enumerate routes, assert 401 |
 | AUTH-03 | Author/Reviewer/User edit matrix proven by **test, including direct-by-ID** attempts (§6) | E | Critical | Automated test matrix 3 roles × own/other entry | Testing | Integration test (real DB) |
 | SEC-04 | **Search by a user without client permission, using a keyword that matches only that client's questions, returns a response indistinguishable from a genuine zero-match** (§3.4, §6) | E | Critical | Response status, body shape, pagination fields, and headers equal those of a keyword matching nothing anywhere; a permitted user *does* see the match (positive control) | Core, Testing | Dedicated integration test on real Postgres |
@@ -96,10 +96,10 @@ These are not stated in the brief but follow directly from §3.4. Skipping them 
 | R-02 | Argon2id password hashing, JWT access token | Needed to have real authenticated users (brief gives no auth mechanism) | Low |
 | R-03 | `helmet`, CORS allow-list, rate limit on login and search | OWASP baseline | Low |
 | R-04 | pino structured logging with request IDs and redaction | Makes AUD-01 traceable, no tokens in logs | Low |
-| R-05 | Postgres Row-Level Security as a second enforcement layer | Defence in depth if someone later writes a query that skips the predicate | Medium, optional |
-| R-06 | OpenAPI doc generated from Zod schemas | Walkthrough aid | Low-Med |
-| R-07 | GitHub Actions: lint, typecheck, test against a Postgres service | Repeatable proof of tests | Low |
-| R-08 | Minimal React UI (Vite) | Demo-ability; brief does not require one — **needs your decision** | Medium |
+| R-05 | Postgres Row-Level Security as a second enforcement layer | Defence in depth if someone later writes a query that skips the predicate | Medium, optional. **Deferred, not built** (ADR-005); an architecture-guard test is used instead |
+| R-06 | OpenAPI doc generated from Zod schemas | Walkthrough aid | Low-Med. **Built** (Swagger UI at `/api/docs`, spec at `/api/openapi.json`) |
+| R-07 | GitHub Actions: lint, typecheck, test against a Postgres service | Repeatable proof of tests | Low. **Not built** |
+| R-08 | Minimal React UI (Vite) | Demo-ability; brief does not require one. **Decided yes (D2); built** (T-19, T-21..T-23) | Medium |
 
 ### 2.5 Optional (O — brief §8, not in scope unless you ask)
 
@@ -120,9 +120,9 @@ Note: NFR-01 will already produce a basic query plan. O-02 is nearly free if the
 | A1 | §1 says "**anyone** can add a question"; §2 says only Authors add and Users are read-only | **Contradiction** | §2/§3.5 govern: only `AUTHOR` and `REVIEWER` can create. `USER` cannot. |
 | A2 | §2 lists Reviewer as edit-any + read; never says Reviewers can add | Gap | Reviewers can also add (superset of Author). |
 | A3 | Your prompt says MERN; the brief fixes PostgreSQL + Prisma | Tension | The brief wins. I still run the SQL vs NoSQL comparison in Stage 2 for the walkthrough, but the outcome is predetermined. |
-| A4 | Express vs Next.js is left open | Open choice | **Decision needed.** Recommend Express (see §5). |
-| A5 | No UI required by the brief | Gap | **Decision needed.** Recommend a minimal React UI after the API and tests are green. |
-| A6 | No authentication mechanism specified | Gap | Seeded users, email + password (Argon2id), short-lived JWT. No self-registration. |
+| A4 | Express vs Next.js is left open | Open choice | **Decided: Express 5** (D1). |
+| A5 | No UI required by the brief | Gap | **Decided: minimal React UI** after the API and tests were green (D2); built. |
+| A6 | No authentication mechanism specified | Gap | Seeded users, email + password (Argon2id), short-lived JWT access token plus rotating refresh token, both in httpOnly cookies (D3, ADR-006). No self-registration. |
 | A7 | Roles global or per-client? | Gap | One global role per user (`USER`/`AUTHOR`/`REVIEWER`); client grants are a separate table. |
 | A8 | Do Reviewers bypass client grants? | Ambiguity | **No bypass** (IMP-03). Safer reading of "permitted to see". |
 | A9 | "Closely duplicates" undefined (§3.6) | Deliberate gap | Trigram similarity on normalized text with a threshold, see §6. Tuned against seed data. |
@@ -145,7 +145,7 @@ Note: NFR-01 will already produce a basic query plan. O-02 is nearly free if the
 | Security | Authentication on all non-health routes; authorization in DB predicate, not display layer | Source |
 | Security | Argon2id, helmet, CORS allow-list, rate limits, no secrets/tokens in logs | Proposed |
 | Performance | Usable at several thousand rows, DB-side filtering | Source |
-| Performance | p95 < 200 ms for combined filter + keyword at 10k rows on a laptop, measured not assumed | Proposed |
+| Performance | p95 < 200 ms for combined filter + keyword at 10k rows on a laptop, measured not assumed | Proposed. **Not measured at 10k.** Measured once at 5,004 rows: 19.5 ms combined, 1.3 ms filter-only, single warm run, not a p95 (`docs/perf.md`) |
 | Data integrity | Question + tags + history written in one transaction; FK constraints; unique `(category, value)` | Proposed (implied by §3.7) |
 | Reliability | Postgres healthcheck gates API start; migrations run on boot; graceful shutdown | Proposed |
 | Observability | Structured trace of who/when for add, edit, rejected duplicate | Source (AUD-01) |
@@ -169,7 +169,7 @@ I will score each candidate against: requirement fit, your familiarity, complexi
 | Validation | Zod | One schema for runtime validation and TS types; reusable in the UI |
 | Frontend (if approved) | React + Vite + TanStack Query, minimal | Server state is the only real state; no Redux/Zustand needed |
 | Testing | Vitest + Supertest against a real Postgres container | Meets §6 "prove with a test"; Playwright only if UI exists and time remains |
-| Auth | JWT (Bearer), seeded users | Simplest thing that gives a real authenticated identity. Cookie sessions are an alternative; discuss in Stage 2 |
+| Auth | Seeded users; JWT access + rotating refresh tokens **in httpOnly cookies** (not Bearer; decided in Stage 2, D3 / ADR-006) | Real authenticated identity with nothing readable by JS |
 
 ---
 
@@ -179,7 +179,7 @@ I will score each candidate against: requirement fit, your familiarity, complexi
 
 ```mermaid
 flowchart LR
-  UI[React UI - optional] -->|JWT| API[Express API]
+  UI[React UI via nginx] -->|httpOnly cookies| API[Express API]
   API -->|parameterized SQL / Prisma| DB[(PostgreSQL)]
   subgraph Docker Compose
     API
@@ -188,7 +188,7 @@ flowchart LR
   end
 ```
 
-Request path: `requestId → pino → helmet/CORS → auth (JWT → req.user) → Zod validate → role check → service → query-builder (only code touching questions) → DB`.
+Request path (Built: no CORS, single origin behind nginx): `requestId → pino → helmet → Origin check → auth (cookie JWT → user loaded by id) → Zod validate / role check → service → question.repo (only code touching questions) → DB`.
 
 ### 6.2 Core rule
 
@@ -221,11 +221,12 @@ erDiagram
 | `tag_category` / `tag` | `tag UNIQUE(category_id, value)`. Seeded. |
 | `question_tag` | PK `(question_id, tag_id)` plus a reverse index `(tag_id, question_id)`. |
 | `client_grant` | PK `(user_id, client_id)`. Makes the visibility `EXISTS` a primary-key lookup. |
+| `refresh_token` | Added in Stage 2/3 (ADR-006): `id` = JWT `jti`, `family_id`, SHA-256 `token_hash`, `used_at`, `revoked_at`. Not in this Stage 1 diagram. |
 | `audit_event` | `type` (`QUESTION_CREATED`, `QUESTION_UPDATED`, `DUPLICATE_REJECTED`, `DUPLICATE_OVERRIDDEN`), `actor_id`, `at`, `question_id NULL`, `payload JSONB` (diff/snapshot or the matched IDs). One table serves AUD-01 and keeps the §8 "suggested edit" option on the same mechanism. |
 
 ### 6.4 Filter query shape
 
-Each selected category becomes one `EXISTS` on `question_tag` with `tag_id = ANY($ids)`: OR within a category, AND across categories. Combined with the visibility predicate and an optional full-text `@@ websearch_to_tsquery(...)` predicate, in a single statement with `LIMIT/OFFSET` (or keyset). The alternatives I will weigh in Stage 2: `int[]` tag column + GIN (fast, but breaks referential integrity), JSONB tags (same problem), EAV (worse).
+Each selected category becomes one `EXISTS` on `question_tag` with `tag_id = ANY($ids)`: OR within a category, AND across categories. Combined with the visibility predicate and an optional full-text `@@ websearch_to_tsquery(...)` predicate, in one `WHERE` with `LIMIT/OFFSET`. Built: the page and the total count are two statements sharing that `WHERE` (keeps `total` correct past the last page). The alternatives I will weigh in Stage 2: `int[]` tag column + GIN (fast, but breaks referential integrity), JSONB tags (same problem), EAV (worse).
 
 ### 6.5 Duplicate rule (proposal)
 
@@ -256,11 +257,11 @@ Postgres RLS keyed on `SET LOCAL app.user_id`, so a forgotten predicate returns 
 
 Critical path: P3 → P4 → **P5** → P6 → P10. P5 is where the POC is won or lost, so it goes before any CRUD polish.
 
-Git: trunk-based, short-lived `feat/*` branches, squash-merge, one PR per phase. (Repo not initialised until you approve.)
+Git (planned): trunk-based, short-lived `feat/*` branches, squash-merge, one PR per phase. Built: one branch with five commits and no PR yet; see `04-task-plan.md`.
 
 ---
 
-## 8. Decisions needed from you
+## 8. Decisions needed from you (all closed; answers in `02-technology-selection.md` §1: D1 Express, D2 minimal UI, D3 cookie JWT, D4 no reviewer bypass, D5 trigram 0.6, D6 two clients + RLS deferred)
 
 1. **Express or Next.js?** Recommend Express.
 2. **UI scope.** (a) API + tests only, (b) minimal React UI after API is green (recommended), (c) full UI.

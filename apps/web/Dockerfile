@@ -7,7 +7,7 @@ COPY apps/web/package.json apps/web/
 RUN npm ci -w @qb/web
 COPY tsconfig.base.json ./
 COPY apps/web apps/web
-# Shows demo-account hints (emails only, never a password) on the login page. Set false for real deployments.
+# Shows the Demo accounts panel on the login page; it fills in the email and the demo password (so the password is in the bundle). Set false for real deployments.
 ARG VITE_SHOW_DEMO_ACCOUNTS=true
 ENV VITE_SHOW_DEMO_ACCOUNTS=$VITE_SHOW_DEMO_ACCOUNTS
 RUN npm run build -w @qb/web

@@ -1,6 +1,6 @@
 # Interview Question Bank
 
-A shared, searchable bank of interview questions. Anyone can browse; authors add questions with answer notes and tags; reviewers can edit any entry. Questions tied to a client are visible **only** to people granted that client, and that rule is enforced inside the database query, so a search never hints that a restricted question exists.
+A shared, searchable bank of interview questions. Everything requires signing in (there is no anonymous access). Signed-in users can browse and search; authors add questions with answer notes and tags and edit their own; reviewers can edit any entry they can see; plain users are read-only. Questions tied to a client are visible **only** to people granted that client, and that rule is enforced inside the database query, so a search never hints that a restricted question exists.
 
 **Stack:** React 19 + Vite + Tailwind (UI) · Express 5 + TypeScript (API) · PostgreSQL 17 + Prisma 7 · Docker Compose · Vitest
 
@@ -20,7 +20,9 @@ Open **http://localhost:3000** and sign in. The first start migrates the databas
 | `reviewer@example.com`    | Reviewer, has access to the Acme client |
 | `user@example.com`        | Read-only user                          |
 
-Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These are demo accounts for local use only.
+Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These are demo accounts for local use only. The seed creates three more (`user.acme@example.com`, `author.globex@example.com`, `author.both@example.com`) for the cross-client cases; they are not listed on the login page.
+
+The login page has a **Demo accounts** panel that fills in both the email **and the password** with one click. That password is compiled into the web bundle, so the panel is for local demos only: set `VITE_SHOW_DEMO_ACCOUNTS=false` for anything shared. The panel always uses the default `Passw0rd!demo`; if you change `SEED_PASSWORD`, the one-click fill will no longer log in (type the password instead). The `VITE_DEMO_PASSWORD` override that the code reads is not passed through `compose.yaml` or the web Dockerfile.
 
 Try the main guarantee: search `zebrafish` as `author.none@example.com` (no results, indistinguishable from a search that matches nothing), then as `author.acme@example.com` (one Acme-only question).
 
@@ -127,7 +129,7 @@ Everything is in `.env` (copy of `.env.example`). Notable settings:
 | `SEED_ON_START`                           | Seed demo data on start when the database is empty.                                                                                                                                      |
 | `ALLOWED_ORIGINS`                         | Origins allowed to make state-changing requests (CSRF check). Same-origin requests are always allowed.                                                                                   |
 | `DOCS_ENABLED`                            | Serves Swagger UI at `/api/docs`.                                                                                                                                                        |
-| `VITE_SHOW_DEMO_ACCOUNTS`                 | Shows demo-account emails (never a password) on the login page. Set `false` for real deployments.                                                                                        |
+| `VITE_SHOW_DEMO_ACCOUNTS`                 | Shows the Demo accounts panel on the login page; clicking one fills in the email **and the demo password** (which is therefore in the web bundle). Set `false` for real deployments.     |
 
 ## Troubleshooting
 
@@ -167,4 +169,4 @@ Key design rule: `apps/api/src/modules/questions/question.repo.ts` is the **only
 
 ## Known limitations
 
-See [docs/05-progress.md](docs/05-progress.md) for the full list. The main ones: duplicate detection is trigram-based (it misses paraphrases and can flag genuinely different questions, which the "add it anyway" override handles), concurrent edits are last-write-wins, performance was measured at 5,000 questions on one machine (not under load), and there is no cloud deployment or CI pipeline yet.
+See [docs/05-progress.md](docs/05-progress.md) for the full list. The main ones: duplicate detection is trigram-based (it misses paraphrases and can flag genuinely different questions, which the "add it anyway" override handles), concurrent edits are last-write-wins, performance was measured at 5,000 questions on one machine (not under load), and there is no cloud deployment, CI pipeline or Playwright test yet. Also still to do: the 10k-row performance run, the brief's §7 walkthrough script, a security review write-up, and a final clean-clone verification report.

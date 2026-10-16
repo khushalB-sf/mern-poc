@@ -9,7 +9,7 @@ Marks: ✅ = I ran it in this project and saw the stated result; 📝 = standard
 | 2 | Build images | `docker compose build` ✅ | `interview-qb-api Built`. First build is slow, later ones use the layer cache. | keeps |
 | 3 | Start everything (foreground) | `docker compose up` 📝 | Logs from all services; Ctrl-C stops them. | keeps |
 | 4 | Start detached | `docker compose up -d` ✅ | Containers start in the background; `api` waits until `db` is healthy. | keeps |
-| 5 | What is running? | `docker compose ps` ✅ | `db` and `api` show `(healthy)`. | keeps |
+| 5 | What is running? | `docker compose ps` ✅ | `db`, `api` and `web` show `(healthy)` (`web` waits for `api`). | keeps |
 | 6 | Logs | `docker compose logs -f api` (omit `-f` to just print) ✅ | JSON log lines; migrations output at the top. Ctrl-C leaves containers running. | keeps |
 | 7 | Reach the services | API: `curl -i localhost:4000/api/health` ✅ → `200 {"status":"ok"}`. API docs (Swagger UI): `http://localhost:4000/api/docs` ✅, raw spec `/api/openapi.json`. Web UI: `http://localhost:3000` ✅ (nginx serves the UI and proxies `/api` to the API). | | keeps |
 | 8 | DB ready? | `docker compose exec db pg_isready -U qb -d qb` 📝 and `docker compose exec db psql -U qb -d qb -c '\dt'` ✅ | `accepting connections`; table list. | keeps |

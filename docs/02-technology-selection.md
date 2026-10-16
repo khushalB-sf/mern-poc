@@ -1,6 +1,6 @@
 # Stage 2 — Technology Selection, Decision Log, ADRs
 
-Status: **DRAFT for review. No implementation code exists.**
+Status: **Decisions made and implemented (T-01..T-23). This is the design record written before the code; where the build differed, the text below was corrected on 2026-10-16 and says so. What is built and verified: `05-progress.md`.**
 
 ## 1. Decision log (Stage 1 questions, now closed)
 
@@ -13,7 +13,7 @@ Status: **DRAFT for review. No implementation code exists.**
 | D5 | Duplicate rule: trigram similarity ≥ 0.6 on visible rows, explicit override recorded in audit | Delegated, my call |
 | D6 | Seed includes **two** clients from day one (gives §8 option 2 almost free). **Postgres RLS is deferred**, not in core scope (ADR-005); instead an architecture-guard test enforces the "one query module" rule | Delegated, my call |
 | D7 | `USER` role cannot create questions (§2 beats §1's "anyone") | Stage 1 default, unchallenged |
-| D8 | **No cloud deployment.** The brief requires only `docker compose up`. CI (lint/typecheck/test) is included; hosting is not. | My call: tell me if you want it |
+| D8 | **No cloud deployment.** The brief requires only `docker compose up`. A CI workflow was planned (T-24) but **has not been built** (no `.github/`); hosting is not planned. | My call: tell me if you want it |
 
 ## 2. Verified facts that changed the plan
 
@@ -26,7 +26,7 @@ I checked these against the npm registry on 2026-10-14. They are facts, not memo
 | Zod `latest` = 4.6.7, Vitest `latest` = 5.0.4, Vite 8.3.4, React 19.3.0, TanStack Query 5.104.2, helmet 8.3.0, pino 10.4.0, argon2 0.45.1, jsonwebtoken 9.0.3, supertest 7.3.1, express-rate-limit 8.7.1, cookie-parser 1.4.7 | Pin exact versions at install time (Stage 5). Re-verify peer-dependency compatibility then. |
 | A Prisma GitHub issue ([prisma#24180](https://github.com/prisma/prisma/issues/24180)) reports that a hand-added `tsvector` column and GIN index were **dropped** by `migrate dev --create-only` (reported to happen silently on an empty table) | Treat the search column and indexes as a **risk to spike in task T-03** before building on them. See ADR-003. |
 
-Not yet verified (will be, in the spike): how Prisma 7 declares the Postgres driver (driver adapter), and whether an `Unsupported("tsvector")` field or an expression index survives `migrate dev` without drift.
+Both open points were resolved by the T-03 spike (results in ADR-003): Prisma 7 uses `@prisma/adapter-pg`, and generated columns drift but expression indexes do not.
 
 ## 3. Stack, with justification
 
@@ -43,11 +43,12 @@ Not yet verified (will be, in the spike): how Prisma 7 declares the Postgres dri
 | Logging | `pino` + `pino-http`, redaction of cookies/passwords | Structured JSON satisfies AUD-01 log traces. |
 | Tests | Vitest + Supertest against a **real Postgres** (separate `qb_test` database) | Mocks cannot prove a SQL predicate. |
 | UI | React 19 + Vite + React Router + TanStack Query + React Hook Form + Zod + Tailwind | ADR-009. |
-| E2E | Playwright, one spec for the golden path, **only if time remains** | The decisive tests are API-level. |
+| E2E | Playwright, one spec for the golden path, **only if time remains** | The decisive tests are API-level. **Not built**; browser checks were done with throwaway puppeteer-core scripts kept outside the repo. |
 | Infra | Docker Compose: `db`, `api`, `web` (nginx: static UI + `/api` reverse proxy) | ADR-010. |
-| CI | GitHub Actions: lint, typecheck, test with a Postgres service | Cheap proof tests really run. |
+| CI | GitHub Actions: lint, typecheck, test with a Postgres service | Cheap proof tests really run. **Not built** (T-24); the same checks run locally (`npm run lint`, `typecheck`, `npm test -w @qb/api`, `npm test -w @qb/web`). |
+| API docs | `swagger-ui-dist` served at `/api/docs`, OpenAPI 3.1 at `/api/openapi.json` | **Added after this plan** (commit 8351fad). Request bodies are generated from the Zod schemas; a test fails if a route is missing from the spec. Served under the strict CSP (same-origin scripts only). |
 
-Deliberately **not** used: Redux/Zustand (the only real state is server state, owned by TanStack Query), Axios (`fetch` suffices), a component library (native `<dialog>`, `<details>`, form controls cover the UI), Swagger UI (a short hand-written API table in docs; OpenAPI generation is an optional extra), a repository pattern (one query module is the only data-access abstraction that earns its place; ADR-005), Passport (we need 60 lines of auth, not a strategy framework).
+Deliberately **not** used: Redux/Zustand (the only real state is server state, owned by TanStack Query), Axios (`fetch` suffices), a component library (native `<dialog>`, `<details>`, form controls cover the UI), a repository pattern (one query module is the only data-access abstraction that earns its place; ADR-005), Passport (we need 60 lines of auth, not a strategy framework).
 
 ## 4. SQL vs NoSQL comparison
 
@@ -107,7 +108,7 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
   - **Trigram caveat:** on my deliberately repetitive synthetic text (every row "Explain topic number N in X") the planner chose a Seq Scan, because `%` at the default 0.3 threshold matches 27% of rows. That says nothing about real text; T-07 seeds varied text and T-15/T-20 re-measure. T-15 will also `SET LOCAL pg_trgm.similarity_threshold = 0.6` so the indexable `%` prefilter and the real threshold agree.
   - **Runtime check:** generated client + `@prisma/adapter-pg` ran a parameterised `$queryRaw` tagged-template FTS query and returned the expected row; `tsc` clean.
   - **Prisma tooling notes:** Prisma 7 keeps the URL in `prisma.config.ts`, not `schema.prisma`; the generator is `prisma-client` with a required `output` (git-ignored, generated at install/build); `migrate reset` refuses to run from an AI agent without explicit user consent, and `migrate dev` blocks on a prompt without a TTY (use `--name` / `--create-only`).
-- **Verification:** `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` must print only "empty migration" after every migration; CI repeats this on a fresh DB.
+- **Verification:** `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` must print only "empty migration" after every migration. Run by hand (empty after the init migration); there is no CI to repeat it.
 - **Review questions:** Is `$queryRaw` injection-safe? Why not `$queryRawUnsafe`? (Never used; lint rule bans it.)
 
 ### ADR-004 — Tag schema and filter query
@@ -124,18 +125,18 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
 - **Problem:** §3.4: no leak through search, filter, ID access, history, counts, duplicates.
 - **Reasoning:** One module means one place to review. Including visibility in the same statement as filter/search/pagination means counts, totals and ranking are computed only over visible rows.
 - **Alternatives:** (a) Fetch then filter in app: **rejected**, it is the failure the brief names. (b) Postgres RLS: **deferred**. It gives defence in depth, but with Prisma connection pooling it needs `SET LOCAL` inside every transaction, and the failure mode (silently empty results from a missing setting) is harder to debug in a 2-week solo POC. Recorded as a future hardening step. (c) Per-question `allowed_user_ids` array: stale on grant change.
-- **Trade-offs:** Discipline-based guarantee, so we add an **architecture-guard test**: scans application source under `src/` (excluding `prisma/seed.ts` and test fixtures) and fails if any file other than `question.repo.ts` references the `question` table in SQL or `prisma.question`.
+- **Trade-offs:** Discipline-based guarantee, so we add an **architecture-guard test**: scans application source under `src/` (excluding `src/seed/` and the generated Prisma client; tests live outside `src/`) and fails if any file other than `question.repo.ts` references the `question`/`question_tag` tables in SQL or the `question`/`questionTag` models. The test also proves the guard bites, and bans `$queryRawUnsafe`/`$executeRawUnsafe` (also an ESLint rule).
 - **Verification:** SEC-04 test (indistinguishable response + positive control), one test per path in IMP-01, IMP-02 identical 404 test, guard test.
 - **Review questions:** Where is the exclusion? What if a developer adds a new endpoint? (Guard test fails.) Why not RLS?
 
 ### ADR-006 — Cookie-based JWT with refresh rotation
 - **Decision:** `POST /api/auth/login` sets two httpOnly cookies:
-  - `access_token`: JWT, 15 min, `Path=/api`, `SameSite=Strict`, `Secure` outside local dev.
+  - `access_token`: JWT, 15 min, `Path=/api`, `SameSite=Strict`, `Secure` when `COOKIE_SECURE=true` (default `false`, so plain-http local use works; the API refuses the committed dev-only secrets when it is `true`).
   - `refresh_token`: JWT with `jti` + `family`, 7 days, `Path=/api/auth`, same flags.
   The JSON response carries only the user profile. The frontend stores no token anywhere; it learns who is logged in via `GET /api/auth/me`.
 - **Refresh:** `POST /api/auth/refresh` rotates: the presented `jti` is looked up in `refresh_token` (stored as SHA-256 hash), marked used, a new token in the same family is issued. **Reuse of an already-used token revokes the whole family** (theft signal). Logout revokes the family and clears cookies.
 - **User loaded per request:** the middleware verifies the access token, then loads the user (role, active) by PK. Role is not trusted from the token, so role/grant changes and deactivation apply instantly. Cost: one PK lookup.
-- **CSRF** (cookies make it a real concern): `SameSite=Strict` + same-origin deployment (nginx proxies `/api`, so no CORS at all) + an `Origin` check on unsafe methods (reject if present and not in `ALLOWED_ORIGINS`) + JSON-only bodies. Double-submit CSRF tokens rejected as extra code with no gain under strict same-origin.
+- **CSRF** (cookies make it a real concern): `SameSite=Strict` + same-origin deployment (nginx proxies `/api`, so no CORS at all) + an `Origin` check on unsafe methods (reject if present, not equal to the request's own origin, and not in `ALLOWED_ORIGINS`; the same-origin exemption is what lets Swagger UI's Try-it-out work) + JSON-only bodies. Double-submit CSRF tokens rejected as extra code with no gain under strict same-origin.
 - **Login hardening:** Argon2id, a dummy hash compare for unknown emails (no user enumeration by timing), identical error for bad email or password, rate limit 5/min per IP+email.
 - **Alternatives:** Bearer token in memory (XSS-exposed, lost on reload, contradicts your requirement); server sessions in Postgres (simpler revocation, but you asked for JWT + refresh); RS256 (key management not justified for one service).
 - **Trade-offs / risks:** Parallel refreshes (two tabs, concurrent 401s) can look like reuse. Mitigation: single-flight refresh in the client plus `navigator.locks` across tabs. Residual risk documented. HS256 means API signs and verifies with the same secret, acceptable for a single service.
@@ -143,7 +144,7 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
 - **Review questions:** Why not localStorage? How do you handle CSRF? What happens if a refresh token leaks? How do you log out everywhere?
 
 ### ADR-007 — Duplicate detection
-- **Decision:** On create, find rows whose normalised text (`btrim(regexp_replace(lower(text), '[^[:alnum:]]+', ' ', 'g'))`, the expression in `question_text_trgm_idx`) is similar to the normalised submitted text, **among rows visible to the submitter**. Query shape: `<expr> % $1 AND similarity(<expr>, $1) >= 0.6`. The `%` operator is the GIN-indexable prefilter (it uses `pg_trgm.similarity_threshold`, default 0.3, so it is deliberately looser); the `similarity() >= 0.6` predicate applies the real threshold (config constant). Top 5 by similarity. Hit → `409 DUPLICATE_SUSPECTED` with matches, nothing stored, audit `DUPLICATE_REJECTED`. Resubmit with `confirmNotDuplicate: true` → stored, audit `DUPLICATE_OVERRIDDEN` (records the override and matched IDs).
+- **Decision:** On create, find rows whose normalised text (`btrim(regexp_replace(lower(text), '[^[:alnum:]]+', ' ', 'g'))`, the expression in `question_text_trgm_idx`) is similar to the normalised submitted text, **among rows visible to the submitter**. Query shape: `<expr> % $1 AND similarity(<expr>, $1) >= 0.6`. The `%` operator is the GIN-indexable prefilter (it uses `pg_trgm.similarity_threshold`, default 0.3, so it is deliberately looser); the `similarity() >= 0.6` predicate applies the real threshold (config constant). Top 5 by similarity. Implementation detail added during T-15: the query runs in a transaction that sets `pg_trgm.similarity_threshold` to 0.6 and `enable_seqscan = off` locally, because the planner otherwise seq-scans (72 ms vs 5.7 ms at 5k rows; `docs/perf.md`). Hit → `409 DUPLICATE_SUSPECTED` with matches, nothing stored, audit `DUPLICATE_REJECTED`. Resubmit with `confirmNotDuplicate: true` → stored, audit `DUPLICATE_OVERRIDDEN` (records the override and matched IDs).
 - **Problem:** §3.6 undefined rule, undefined false-positive behaviour.
 - **Reasoning:** Trigram handles reordering/typos in short strings and is index-backed (GIN `gin_trgm_ops` with the `%` operator). Visible-rows-only is mandatory (IMP-04).
 - **Alternatives:** Exact-match only (misses near-duplicates); embeddings (needs model, pgvector, overkill); Levenshtein (not indexable); a unique constraint (leaks).
@@ -152,10 +153,10 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
 - **Review questions:** How is duplicate detection implemented, and what happens on a false positive? Why 0.6?
 
 ### ADR-008 — Single audit table
-- **Decision:** `audit_event(id, type, actor_id, at, question_id NULL, payload JSONB)`; types `QUESTION_CREATED`, `QUESTION_UPDATED`, `DUPLICATE_REJECTED`, `DUPLICATE_OVERRIDDEN`. Written in the **same transaction** as the change. Every event also emits a pino log line. A question's history is `audit_event WHERE question_id = $id`, only after the visibility check on the question.
+- **Decision:** `audit_event(id, type, actor_id, at, question_id NULL, payload JSONB)`; types `QUESTION_CREATED`, `QUESTION_UPDATED`, `DUPLICATE_REJECTED`, `DUPLICATE_OVERRIDDEN`. `QUESTION_CREATED`, `QUESTION_UPDATED` and `DUPLICATE_OVERRIDDEN` are written in the **same transaction** as the change; `DUPLICATE_REJECTED` has no change to roll back with, so it is committed on its own before the 409 is thrown. Every event also emits a pino log line. A question's history is `audit_event WHERE question_id = $id`, only after the visibility check on the question, and `GET .../history` returns only the type, time, actor and (for edits) the field diffs: `DUPLICATE_*` payloads name other questions the viewer may not be allowed to see, so they are not exposed.
 - **Reasoning:** One mechanism covers §3.7, the "rejected duplicate" trace (§6), and the §8 "suggested edit" idea without a parallel table.
 - **Alternatives:** `question_history` per-question snapshots only (cannot hold rejected duplicates); DB triggers (hides logic, no actor identity without session variables); event sourcing (overkill).
-- **Trade-offs:** JSONB payload is less strictly typed; Zod-validated on write.
+- **Trade-offs:** JSONB payload is less strictly typed. The plan said "Zod-validated on write"; in the build it is only typed (`InputJsonValue`) and the payloads are built by the service, not validated.
 - **Verification:** Test asserts row + log line for each event type; transaction rollback leaves no orphan event.
 
 ### ADR-009 — Frontend: minimal, strong UX
@@ -166,13 +167,13 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
 - **Verification:** Component tests for the filter panel, duplicate dialog and login; `axe` check on main screens; optional one Playwright flow.
 
 ### ADR-010 — Docker topology
-- **Decision:** Compose services: `db` (postgres:17, volume, `pg_isready` healthcheck), `api` (waits for healthy db, runs `prisma migrate deploy`, seeds if empty, then starts), `web` (nginx: static build + `location /api` → `http://api:4000`). Host ports: web **3000**, api **4000**, db **5436** (avoids clashing with a local Postgres on 5432). Services talk by service name (`db`, `api`), never `localhost`. Dev loop: `docker compose up db` + `npm run dev` for api/web.
+- **Decision:** Compose services: `db` (postgres:17, volume, `pg_isready` healthcheck), `api` (waits for healthy db, runs `prisma migrate deploy`, seeds if empty, then starts), `web` (`nginx-unprivileged`, listens on 8080 in the container: static build + `location /api/` → `http://api:4000`). Host ports: web **3000**, api **4000**, db **5436** (avoids clashing with a local Postgres on 5432). Services talk by service name (`db`, `api`), never `localhost`. Dev loop: `docker compose up db` + `npm run dev` for api/web.
 - **Why nginx proxy:** it gives the browser a single origin, which is what makes `SameSite=Strict` cookies and "no CORS" (ADR-006) work in Docker.
 - **Verification:** clean-clone run; healthchecks; `docker compose down -v` reset documented (destructive, called out).
 
 ### ADR-011 — Testing strategy
 - **Decision:** Pyramid weighted to API integration tests on real Postgres: unit tests for pure logic (tag parsing, normalisation, token helpers), integration tests for everything security-relevant, a few component tests, one optional E2E. Each test file truncates and reseeds a minimal fixture; global setup applies migrations to `qb_test`.
-- **Isolation:** Vitest runs test files in parallel by default; a shared `qb_test` database would be flaky, so integration files run serially (option name to verify for Vitest 5) with truncate per file.
-- **Non-negotiable tests:** SEC-04 (parameterised: keyword only, tag filter only, keyword + tags, `clientId` filter, offset past end; each with a no-match control and a permitted-user positive control), IMP-01/02 per read path, AUTH-03 matrix (3 roles × own/other × direct-by-ID), SEC-01 validation (assert the service was not called), SEC-02 route sweep, AUD-01, refresh-rotation/reuse.
-- **SEC-04 mechanics:** keyword `zebrafish-xyz` exists only in client-X questions. Unpermitted user searches it; the same user searches `qqqq-nomatch`. Assert status, headers (minus `Date`, `X-Request-Id`), and body deep-equal. Then the permitted user searches the first keyword and must see the question, which proves the zero is not vacuous.
+- **Isolation:** Vitest runs test files in parallel by default; a shared `qb_test` database would be flaky, so integration files run serially (`fileParallelism: false` in `apps/api/vitest.config.ts`) with truncate per file.
+- **Non-negotiable tests:** SEC-04 (parameterised: keyword only, tag filter only, keyword + tags, `clientId` filter, offset past end; each with a no-match control and a permitted-user positive control), IMP-01/02 per read path, AUTH-03 matrix (3 roles × own/other × direct-by-ID), SEC-01 validation (assert a 400 and that nothing was written; there is no service spy), SEC-02 route sweep, AUD-01, refresh-rotation/reuse.
+- **SEC-04 mechanics:** a marker keyword (the seed uses `zebrafish`, Acme-only) exists only in client-X questions. Unpermitted user searches it; the same user searches `qqqq-nomatch`. Assert status, headers (minus `Date`, `X-Request-Id`), and body deep-equal. Then the permitted user searches the first keyword and must see the question, which proves the zero is not vacuous.
 - **Limit:** does not cover timing side channels (A15).
