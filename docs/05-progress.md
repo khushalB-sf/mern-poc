@@ -8,7 +8,7 @@
 | T-04 schema + migration | Done | 9 tables, `prisma migrate diff` empty, CHECK/FK/unique verified by hand in psql (rolled back); **automated schema test still to write in T-08** |
 | T-06 API foundation | Done | 16 vitest tests pass: env validation (no secret echo, dev-only placeholder guard), uniform error shape, no stack/DB-detail leaks, own X-Request-Id, helmet headers, cookie/authorization never logged, `/api/health` 200/503. `npm run lint` + `typecheck` clean |
 | T-05 API Dockerfile + compose `api` | Done (web service added in T-19) | Image builds; `api` healthy; migrations auto-apply; a throwaway second Compose project started from an empty DB, migrated, seeded and went healthy, then was removed with only its own volume. Commands in `docs/docker.md` |
-| T-07 Seed | Done | 7 users, 2 clients, 5,004 unique questions (~10% client-restricted), 2.0-4.2 s; runs on start when `SEED_ON_START=true` and DB empty; refuses to reseed a non-empty DB |
+| T-07 Seed | Done | 9 users, 2 clients, 5,004 unique questions (~10% client-restricted), 2.0-4.2 s; runs on start when `SEED_ON_START=true` and DB empty; refuses to reseed a non-empty DB |
 | T-08 Test harness | Done | `qb_test` auto-created and migrated by vitest globalSetup; per-file truncate refuses non-`_test` DBs; files run serially; fixture world with 8 users in every role/grant combination |
 | T-09 Auth | Done | 44 tests (see below) |
 | T-10 Refresh rotation + CSRF origin check | Done | rotation, family revoke on replay, atomic single-use (concurrent refresh: exactly one wins), logout, Origin allow-list |

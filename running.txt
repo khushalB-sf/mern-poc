@@ -1,0 +1,19 @@
+Run server:
+docker compose up -d db api
+
+Run UI:
+npm run dev -w @qb/web
+
+Table:
+User, 
+Client, 
+ClientPermission, 
+Category, 
+Tag, 
+Question, 
+QuestionTag, 
+ChangeHistory
+
+- a question can carry multiple tags within each category
+- a tag can apply to many questions.
+- Question has many QuestionTag rows, Tag has many QuestionTag rows, and QuestionTag is just (questionId, tagId)

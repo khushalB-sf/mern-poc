@@ -49,6 +49,7 @@ export const SEED_PASSWORD_NOTE = 'All seeded users share SEED_PASSWORD.';
 export const USERS = [
   { email: 'user@example.com', name: 'Una User', role: 'USER', grants: [] },
   { email: 'user.acme@example.com', name: 'Uma Acme (read-only)', role: 'USER', grants: [0] },
+  { email: 'user.globex@example.com', name: 'Gina Globex (read-only)', role: 'USER', grants: [1] },
   { email: 'author.acme@example.com', name: 'Alice Author (Acme)', role: 'AUTHOR', grants: [0] },
   { email: 'author.globex@example.com', name: 'Bob Author (Globex)', role: 'AUTHOR', grants: [1] },
   {
@@ -64,6 +65,12 @@ export const USERS = [
     grants: [0, 1],
   },
   { email: 'reviewer@example.com', name: 'Rex Reviewer (Acme)', role: 'REVIEWER', grants: [0] },
+  {
+    email: 'reviewer.both@example.com',
+    name: 'Rita Reviewer (both clients)',
+    role: 'REVIEWER',
+    grants: [0, 1],
+  },
 ] as const;
 
 // Named fixtures for demos and manual checks. client: index into CLIENTS or null.

@@ -13,14 +13,19 @@ docker compose up -d --build         # database + API + web
 
 Open **http://localhost:3000** and sign in. The first start migrates the database and seeds about 5,000 questions.
 
-| Account                   | Role                                    |
-| ------------------------- | --------------------------------------- |
-| `author.acme@example.com` | Author, has access to the Acme client   |
-| `author.none@example.com` | Author, no client access                |
-| `reviewer@example.com`    | Reviewer, has access to the Acme client |
-| `user@example.com`        | Read-only user                          |
+| Account                     | Role                                    |
+| --------------------------- | --------------------------------------- |
+| `author.acme@example.com`   | Author, has access to the Acme client   |
+| `author.globex@example.com` | Author, has access to the Globex client |
+| `author.both@example.com`   | Author, has access to Acme and Globex   |
+| `author.none@example.com`   | Author, no client access                |
+| `reviewer@example.com`      | Reviewer, has access to the Acme client |
+| `reviewer.both@example.com` | Reviewer, has access to Acme and Globex |
+| `user.acme@example.com`     | Read-only user, has access to Acme      |
+| `user.globex@example.com`   | Read-only user, has access to Globex    |
+| `user@example.com`          | Read-only user                          |
 
-Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These are demo accounts for local use only. The seed creates three more (`user.acme@example.com`, `author.globex@example.com`, `author.both@example.com`) for the cross-client cases; they are not listed on the login page.
+Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These are demo accounts for local use only.
 
 The login page has a **Demo accounts** panel that fills in both the email **and the password** with one click. That password is compiled into the web bundle, so the panel is for local demos only: set `VITE_SHOW_DEMO_ACCOUNTS=false` for anything shared. The panel always uses the default `Passw0rd!demo`; if you change `SEED_PASSWORD`, the one-click fill will no longer log in (type the password instead). The `VITE_DEMO_PASSWORD` override that the code reads is not passed through `compose.yaml` or the web Dockerfile.
 

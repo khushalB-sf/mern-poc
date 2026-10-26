@@ -37,13 +37,21 @@ export function AppShell() {
             Question bank
           </Link>
           <div className="ml-auto flex items-center gap-2 sm:gap-4">
+            <Link
+              to="/how-it-works"
+              aria-current={pathname === '/how-it-works' ? 'page' : undefined}
+              className="whitespace-nowrap text-sm font-medium hover:underline"
+            >
+              How it works
+            </Link>
             {me && canCreate(me) && (
               <Link
                 to="/questions/new"
+                aria-label="Add question"
                 className={cx(buttonClass('primary', 'sm'), 'whitespace-nowrap')}
               >
                 <Icon name="plus" />
-                Add question
+                <span className="hidden sm:inline">Add question</span>
               </Link>
             )}
             {me && (
@@ -52,19 +60,29 @@ export function AppShell() {
                 <p className="text-ink-soft">{ROLE_LABEL[me.role]}</p>
               </div>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Sign out"
-              className="whitespace-nowrap"
-              loading={logout.isPending}
-              onClick={() =>
-                logout.mutate(undefined, { onSettled: () => navigate('/login', { replace: true }) })
-              }
-            >
-              <Icon name="logout" />
-              <span className="hidden sm:inline">Sign out</span>
-            </Button>
+            {me && (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Sign out"
+                className="whitespace-nowrap"
+                loading={logout.isPending}
+                onClick={() =>
+                  logout.mutate(undefined, {
+                    onSettled: () => navigate('/login', { replace: true }),
+                  })
+                }
+              >
+                <Icon name="logout" />
+                <span className="hidden sm:inline">Sign out</span>
+              </Button>
+            )}
+            {/* null = checked and signed out; undefined = still checking, so show nothing yet. */}
+            {me === null && (
+              <Link to="/login" className={cx(buttonClass('primary', 'sm'), 'whitespace-nowrap')}>
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </header>
