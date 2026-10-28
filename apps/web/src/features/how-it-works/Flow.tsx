@@ -26,10 +26,7 @@ export function Flow({ steps, label }: { steps: FlowStep[]; label: string }) {
               <p className="mt-0.5 text-sm text-ink-soft">{s.detail}</p>
               {s.fail && (
                 <p className="mt-1.5">
-                  <span className="inline-block rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
-                    <span className="sr-only">Rejects with </span>
-                    {s.fail}
-                  </span>
+                  <FailChip>{s.fail}</FailChip>
                 </p>
               )}
             </div>
@@ -42,6 +39,16 @@ export function Flow({ steps, label }: { steps: FlowStep[]; label: string }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/** What the caller gets if a step refuses the request. */
+export function FailChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-block rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
+      <span className="sr-only">Rejects with </span>
+      {children}
+    </span>
   );
 }
 

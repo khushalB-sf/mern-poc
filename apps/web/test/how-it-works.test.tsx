@@ -12,6 +12,7 @@ const signedOut = {
   },
 };
 const TAB_LABELS = [
+  'Feature by feature',
   'Roles',
   'Grants',
   'Request flow',
@@ -23,7 +24,7 @@ const TAB_LABELS = [
 ];
 
 describe('how it works page', () => {
-  it('is reachable from the header and opens on the roles tab', async () => {
+  it('is reachable from the header and opens on the feature walkthrough', async () => {
     mockApi({ ...baseHandlers });
     renderApp('/');
     await userEvent.click(await screen.findByRole('link', { name: 'How it works' }));
@@ -31,8 +32,12 @@ describe('how it works page', () => {
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(TAB_LABELS);
-    expect(screen.getByRole('tab', { name: 'Roles' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Feature by feature' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
 
+    await userEvent.click(screen.getByRole('tab', { name: 'Roles' }));
     const roles = screen.getByRole('table', { name: 'What each role can do' });
     const editOthers = within(roles).getByRole('row', { name: /Edit someone else/ });
     // Only the Reviewer column allows it.
@@ -41,7 +46,7 @@ describe('how it works page', () => {
 
   it('shows one tab at a time and keeps the open tab in the address', async () => {
     mockApi({ ...baseHandlers });
-    const { router } = renderApp('/how-it-works');
+    const { router } = renderApp('/how-it-works#roles');
     await screen.findByRole('table', { name: 'What each role can do' });
     expect(screen.queryByRole('table', { name: /Demo accounts/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
@@ -77,7 +82,64 @@ describe('how it works page', () => {
     await userEvent.keyboard('{End}');
     expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{ArrowRight}'); // wraps round to the first tab
-    expect(screen.getByRole('tab', { name: 'Roles' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Feature by feature' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('walks each feature through the same five layers, ending at the database', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works');
+    const features = await screen.findByRole('group', { name: 'Choose a feature' });
+    const buttons = within(features).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      'Sign in',
+      'Search and filter',
+      'Open a question',
+      'Add a question',
+      'Edit a question',
+      'Stay signed in',
+    ]);
+
+    for (const b of buttons) {
+      await userEvent.click(b);
+      const journey = screen.getByRole('list', {
+        name: `${b.textContent}: from click to database`,
+      });
+      const layers = within(journey)
+        .getAllByRole('listitem', { name: '' })
+        .filter((li) => li.id.startsWith('walk-'))
+        .map((li) => li.querySelector('p')?.textContent?.split(' · ')[0]);
+      expect(layers).toEqual(['On screen', 'Browser', 'API gates', 'Business rules', 'Database']);
+    }
+
+    // A write names the tables it changes: the create transaction touches three.
+    await userEvent.click(screen.getByRole('button', { name: 'Add a question' }));
+    const tables = screen.getByRole('list', { name: 'Tables touched' });
+    expect(within(tables).getByText('question_tag')).toBeInTheDocument();
+    expect(within(tables).getAllByText('audit_event')).toHaveLength(2);
+  });
+
+  it('presents one step at a time and moves between steps', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works');
+    await userEvent.click(await screen.findByRole('button', { name: 'Present step by step' }));
+    expect(screen.getByText('Step 1 of 5: On screen')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Back/ })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: /Next/ }));
+    expect(screen.getByText('Step 2 of 5: Browser')).toBeInTheDocument();
+    const lit = document.querySelector('[aria-current="step"]');
+    expect(lit?.textContent).toMatch(/React sends the credentials/);
+
+    // Choosing another feature starts it again from the first step.
+    await userEvent.click(screen.getByRole('button', { name: 'Edit a question' }));
+    expect(screen.getByText('Step 1 of 5: On screen')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
+    expect(screen.queryByText(/^Step \d of 5/)).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-current="step"]')).toBeNull();
   });
 
   it('draws a mind map for each tab, built from the same data as the tables', async () => {

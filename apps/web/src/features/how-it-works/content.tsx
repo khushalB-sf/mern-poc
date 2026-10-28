@@ -508,6 +508,36 @@ const holders = (client: 'Acme' | 'Globex') =>
 
 /** One mind map per tab. The grants map is built from the demo accounts, so it cannot drift from them. */
 export const MIND_MAPS: Record<string, MindMapData> = {
+  features: {
+    center: 'One click',
+    branches: [
+      { title: 'Sign in', leaves: [{ text: 'Reads app_user' }, { text: 'Writes refresh_token' }] },
+      {
+        title: 'Search',
+        leaves: [{ text: 'Reads only' }, { text: 'Visibility rule in the SQL' }],
+      },
+      {
+        title: 'Open one',
+        leaves: [{ text: 'Reads question and history' }, { text: 'Hidden is a 404' }],
+      },
+      {
+        title: 'Add',
+        leaves: [
+          { text: 'Writes question and tags' },
+          { text: 'Writes an audit event' },
+          { text: 'One transaction' },
+        ],
+      },
+      {
+        title: 'Edit',
+        leaves: [{ text: 'Updates question' }, { text: 'Audit event holds the diff' }],
+      },
+      {
+        title: 'Stay signed in',
+        leaves: [{ text: 'Marks the old token used' }, { text: 'Writes the next token' }],
+      },
+    ],
+  },
   roles: {
     center: 'Role: what you can do',
     branches: [

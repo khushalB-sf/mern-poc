@@ -4,6 +4,7 @@ import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { Icon } from '../../shared/ui/Icon';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
+import { FeatureWalkthrough } from './FeatureWalkthrough';
 import { Code, Flow } from './Flow';
 import { MindMap } from './MindMap';
 import { RequestFlowDiagram } from './RequestFlowDiagram';
@@ -382,6 +383,13 @@ const TABS: {
   lead: ReactNode;
   Body: () => ReactNode;
 }[] = [
+  {
+    id: 'features',
+    label: 'Feature by feature',
+    title: 'From one click to the database',
+    lead: 'Pick a feature. Every one follows the same five layers, from what the person does on screen to the rows that change in Postgres.',
+    Body: FeatureWalkthrough,
+  },
   {
     id: 'roles',
     label: 'Roles',
