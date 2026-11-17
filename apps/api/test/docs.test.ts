@@ -18,7 +18,10 @@ const getSpec = async () => (await request(app).get('/api/openapi.json')).body a
 
 // "/api/questions/<uuid>/history" -> "/questions/{id}/history", relative to the spec's server url (/api)
 const toSpecPath = (p: string) =>
-  p.replace(/^\/api/, '').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/, '{id}');
+  p
+    .replace(/^\/api/, '')
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/, '{id}')
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/, '{tagId}'); // a second id in the path
 
 describe('OpenAPI document', () => {
   it('is served as OpenAPI 3.1 JSON', async () => {

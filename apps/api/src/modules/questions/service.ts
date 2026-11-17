@@ -51,7 +51,7 @@ export async function createQuestion(
     });
     if (!client) throw notFound('Client not found');
   }
-  const tagIds = await resolveTagIds(db, input.tags);
+  const tagIds = await resolveTagIds(db, input.tags, [], input.clientId ?? null);
 
   // Compared only against questions this actor can see (IMP-04).
   const matches = await findSimilarQuestions(db, actor, input.text, DUPLICATE_THRESHOLD);
@@ -123,7 +123,7 @@ export async function updateQuestion(
     }
     let tagIds: string[] | undefined;
     if (patch.tags !== undefined) {
-      tagIds = await resolveTagIds(tx, patch.tags, tagKeys(current));
+      tagIds = await resolveTagIds(tx, patch.tags, tagKeys(current), current.client?.id ?? null);
       const next = [...new Set(patch.tags)].sort();
       if (next.join() !== tagKeys(current).join()) {
         changes.tags = { from: tagKeys(current), to: next };

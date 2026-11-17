@@ -73,6 +73,13 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
     }
   }
 
+  // Each department's technologies (shared ones like Node.js sit under several departments).
+  await db.clientTag.createMany({
+    data: DEPARTMENTS.flatMap((d, i) =>
+      d.techs.map((t) => ({ clientId: clients[i]!.id, tagId: tagId.get(`technology:${t}`)! })),
+    ),
+  });
+
   // Who may author what: a department question needs an author granted for that department.
   const authors = USERS.filter((u) => u.role === 'AUTHOR');
   const authorsFor = (dept: number | null) =>

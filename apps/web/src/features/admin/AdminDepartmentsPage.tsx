@@ -12,6 +12,8 @@ import { Dialog } from '../../shared/ui/Dialog';
 import { TextAreaField, TextField } from '../../shared/ui/Field';
 import { EmptyState, ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
+import { DepartmentTechnologies } from './DepartmentTechnologies';
+import { OtherTechnologies } from './OtherTechnologies';
 import { Page, PageHeader } from '../../shared/ui/Page';
 import {
   useAdminDepartments,
@@ -57,7 +59,7 @@ function EditDialog({ department, onClose }: { department: Department; onClose: 
     defaultValues: { name: department.name, description: department.description ?? '' },
   });
   return (
-    <Dialog open onClose={onClose} title={`Edit ${department.name}`}>
+    <Dialog open onClose={onClose} title={`Edit ${department.name}`} size="lg">
       <form
         noValidate
         onSubmit={handleSubmit((v) => {
@@ -99,6 +101,7 @@ function EditDialog({ department, onClose }: { department: Department; onClose: 
           </Button>
         </div>
       </form>
+      <DepartmentTechnologies departmentId={department.id} departmentName={department.name} />
     </Dialog>
   );
 }
@@ -257,6 +260,8 @@ export function AdminDepartmentsPage() {
         </div>
       </div>
 
+      {departments.data && <OtherTechnologies departments={departments.data} />}
+
       <DeletedDepartments />
 
       {editing && <EditDialog department={editing} onClose={() => setEditing(null)} />}
@@ -288,6 +293,8 @@ export function AdminDepartmentsPage() {
               Its {plural(impact.data.questions, 'question')}
               {impact.data.pending > 0 && ` (${impact.data.pending} awaiting review)`} will be
               hidden from everyone, and {plural(impact.data.users, 'user')} lose access.
+              {impact.data.technologies > 0 &&
+                ` ${plural(impact.data.technologies, 'technology', 'technologies')} used only by this department will be archived.`}
             </>
           ) : (
             'Its questions will be hidden from everyone.'

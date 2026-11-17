@@ -11,8 +11,8 @@ import {
   departmentImpact,
   listDeletedQuestions,
   restoreQuestion,
-  tagUsageCounts,
 } from '../questions/question.repo.js';
+import { exclusiveTechnologyIds } from './technologies.js';
 
 // Everything here ignores soft-deleted users and departments, so a deleted record behaves like a missing one.
 const userSelect = {
@@ -264,7 +264,11 @@ export async function clientImpact(db: Db, id: string) {
     select: clientSelect,
   });
   if (!current) throw notFound('Department not found');
-  return { ...(await departmentImpact(db, id)), users: toDepartment(current).userCount };
+  return {
+    ...(await departmentImpact(db, id)),
+    users: toDepartment(current).userCount,
+    technologies: (await exclusiveTechnologyIds(db, id)).length,
+  };
 }
 
 /** Undoes deleteClient: the department, its grants and all its questions come back as they were. */
@@ -273,10 +277,15 @@ export async function restoreClient(db: Db, log: Logger, actor: AuthUser, id: st
     const current = await tx.client.findFirst({ where: { id, deletedAt: { not: null } } });
     if (!current) throw notFound('Deleted department not found');
     await tx.client.update({ where: { id }, data: { deletedAt: null } });
+    // Only the technologies this very deletion archived (same timestamp) come back.
+    const revived = await tx.tag.updateMany({
+      where: { archivedAt: current.deletedAt, clients: { some: { clientId: id } } },
+      data: { archivedAt: null },
+    });
     await recordAudit(tx, log, {
       type: 'CLIENT_RESTORED',
       actorId: actor.id,
-      payload: { clientId: id, name: current.name },
+      payload: { clientId: id, name: current.name, technologiesRestored: revived.count },
     });
     return toDepartment(await tx.client.findUniqueOrThrow({ where: { id }, select: clientSelect }));
   });
@@ -292,47 +301,6 @@ export async function restoreDeletedQuestion(db: Db, log: Logger, actor: AuthUse
       actorId: actor.id,
       questionId: id,
       payload: { text },
-    });
-  });
-}
-
-/** Technologies (the `technology` tag category) with how many live questions use each. */
-export async function listTechnologies(db: Db) {
-  const [tags, usage] = await Promise.all([
-    db.tag.findMany({
-      where: { category: { slug: 'technology' } },
-      orderBy: { label: 'asc' },
-      select: { id: true, value: true, label: true, retiredAt: true },
-    }),
-    tagUsageCounts(db),
-  ]);
-  return tags.map((t) => ({
-    id: t.id,
-    value: t.value,
-    label: t.label,
-    retired: t.retiredAt !== null,
-    questionCount: usage.get(t.id) ?? 0,
-  }));
-}
-
-/** Retire hides a technology from pickers and filters; it stays on the questions that already carry it. */
-export async function setTechnologyRetired(
-  db: Db,
-  log: Logger,
-  actor: AuthUser,
-  id: string,
-  retired: boolean,
-) {
-  await db.$transaction(async (tx) => {
-    const current = await tx.tag.findFirst({
-      where: { id, category: { slug: 'technology' }, retiredAt: retired ? null : { not: null } },
-    });
-    if (!current) throw notFound(retired ? 'Technology not found' : 'Retired technology not found');
-    await tx.tag.update({ where: { id }, data: { retiredAt: retired ? new Date() : null } });
-    await recordAudit(tx, log, {
-      type: retired ? 'TAG_RETIRED' : 'TAG_RESTORED',
-      actorId: actor.id,
-      payload: { tagId: id, label: current.label },
     });
   });
 }
@@ -412,11 +380,16 @@ export async function deleteClient(db: Db, log: Logger, actor: AuthUser, id: str
   await db.$transaction(async (tx) => {
     const current = await tx.client.findFirst({ where: { id, deletedAt: null } });
     if (!current) throw notFound('Department not found');
-    await tx.client.update({ where: { id }, data: { deletedAt: new Date() } });
+    const now = new Date();
+    // Technologies no other live department uses go with it; shared ones stay. Same timestamp as the
+    // deletion, so restoring the department can tell which ones this deletion archived.
+    const exclusive = await exclusiveTechnologyIds(tx, id);
+    await tx.tag.updateMany({ where: { id: { in: exclusive } }, data: { archivedAt: now } });
+    await tx.client.update({ where: { id }, data: { deletedAt: now } });
     await recordAudit(tx, log, {
       type: 'CLIENT_DELETED',
       actorId: actor.id,
-      payload: { clientId: id, name: current.name },
+      payload: { clientId: id, name: current.name, technologiesArchived: exclusive.length },
     });
   });
 }

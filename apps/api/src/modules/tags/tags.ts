@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Queryable } from '../../db/prisma.js';
 import { AppError } from '../../http/errors.js';
+import { globalTagIds, type Actor } from '../questions/question.repo.js';
 
 /** "category:value", lowercase slugs, e.g. technology:react or type:system-design. */
 export const tagString = z
@@ -57,24 +58,92 @@ export async function resolveTagGroups(db: Queryable, tags: string[]): Promise<s
 
 /**
  * Flat, de-duplicated tag ids for writes (same validation as filters: unknown tags are a 400).
- * A retired tag cannot be newly attached; `alreadyOn` lists the "category:value" tags the question
- * already carries, which stay allowed so an edit does not fail on a tag retired after the fact.
+ * - An archived tag cannot be newly attached.
+ * - On a department question, a technology must be one of that department's (`clientId`). A global
+ *   question (`clientId` null) may use any active technology.
+ * `alreadyOn` lists the "category:value" tags the question already carries; those stay allowed, so an
+ * edit does not fail on a tag archived or unlinked after the fact.
  */
 export async function resolveTagIds(
   db: Queryable,
   tags: string[],
   alreadyOn: string[] = [],
+  clientId: string | null = null,
 ): Promise<string[]> {
   const ids = [...new Set((await resolveTagGroups(db, tags)).flat())];
-  const retired = await db.tag.findMany({
-    where: { id: { in: ids }, retiredAt: { not: null } },
-    select: { value: true, category: { select: { slug: true } } },
+  if (ids.length === 0) return ids;
+  const rows = await db.tag.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, value: true, archivedAt: true, category: { select: { slug: true } } },
   });
-  const added = retired
-    .map((t) => `${t.category.slug}:${t.value}`)
-    .filter((t) => !alreadyOn.includes(t));
-  if (added.length > 0) {
-    throw new AppError(400, 'TAG_RETIRED', `Tag no longer available: ${added.join(', ')}`);
+  const fresh = rows.filter((t) => !alreadyOn.includes(`${t.category.slug}:${t.value}`));
+  const name = (t: (typeof rows)[number]) => `${t.category.slug}:${t.value}`;
+
+  const archived = fresh.filter((t) => t.archivedAt);
+  if (archived.length > 0) {
+    throw new AppError(
+      400,
+      'TAG_ARCHIVED',
+      `Tag no longer available: ${archived.map(name).join(', ')}`,
+    );
+  }
+  if (clientId) {
+    const technologies = fresh.filter((t) => t.category.slug === 'technology');
+    const linked = new Set(
+      (
+        await db.clientTag.findMany({
+          where: { clientId, tagId: { in: technologies.map((t) => t.id) } },
+          select: { tagId: true },
+        })
+      ).map((l) => l.tagId),
+    );
+    const outside = technologies.filter((t) => !linked.has(t.id));
+    if (outside.length > 0) {
+      throw new AppError(
+        400,
+        'TAG_NOT_IN_DEPARTMENT',
+        `Not a technology of this department: ${outside.map(name).join(', ')}`,
+      );
+    }
   }
   return ids;
+}
+
+/**
+ * Technologies no live department uses ("Other" in the UI). Active ones are offered to everyone as an
+ * "Other" group; the admin manages them on the Departments page.
+ */
+export async function orphanTagIds(db: Queryable): Promise<Set<string>> {
+  const rows = await db.tag.findMany({
+    where: {
+      category: { slug: 'technology' },
+      archivedAt: null,
+      clients: { none: { client: { deletedAt: null } } },
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * Technology tag ids to offer as list filters, or null for no narrowing (admins). Everyone else gets
+ * the technologies of the departments they are granted (without any, those on global questions), plus
+ * the unassigned "Other" ones.
+ */
+export async function filterTechnologyIds(
+  db: Queryable,
+  actor: Actor,
+): Promise<Set<string> | null> {
+  if (actor.role === 'ADMIN') return null;
+  const links = await db.clientTag.findMany({
+    where: {
+      client: { deletedAt: null, grants: { some: { userId: actor.id } } },
+      tag: { archivedAt: null },
+    },
+    select: { tagId: true },
+    distinct: ['tagId'],
+  });
+  const own = links.length > 0 ? new Set(links.map((l) => l.tagId)) : await globalTagIds(db);
+  for (const id of await orphanTagIds(db)) own.add(id);
+  return own;
 }

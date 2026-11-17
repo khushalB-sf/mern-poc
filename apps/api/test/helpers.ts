@@ -49,7 +49,7 @@ export async function resetDb(db: Db) {
   const rows = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
   const name = rows[0]?.name;
   if (!name?.endsWith('_test')) throw new Error(`refusing to truncate non-test database "${name}"`);
-  await db.$executeRaw`TRUNCATE audit_event, question_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
+  await db.$executeRaw`TRUNCATE audit_event, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
 }
 
 // Cheap Argon2 parameters: fixtures need valid hashes, not strong ones.
@@ -113,6 +113,13 @@ export async function buildWorld(db: Db) {
       tags.set(`${slug}:${value}`, t.id);
     }
   }
+  // Acme offers React and Node.js, Globex only React (Node.js is shared, React is not exclusive to Acme).
+  const link = (client: { id: string }, ...values: string[]) =>
+    db.clientTag.createMany({
+      data: values.map((v) => ({ clientId: client.id, tagId: tags.get(`technology:${v}`)! })),
+    });
+  await link(acme, 'react', 'nodejs');
+  await link(globex, 'react');
   return { acme, globex, users, tags };
 }
 
@@ -177,7 +184,12 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['post', `/api/admin/clients/${UUID}/restore`],
   ['get', '/api/admin/deleted-questions'],
   ['post', `/api/admin/questions/${UUID}/restore`],
-  ['get', '/api/admin/technologies'],
-  ['post', `/api/admin/technologies/${UUID}/retire`],
+  ['get', `/api/admin/clients/${UUID}/technologies`],
+  ['post', `/api/admin/clients/${UUID}/technologies`],
+  ['delete', `/api/admin/clients/${UUID}/technologies/${UUID}`],
+  ['post', `/api/admin/clients/${UUID}/technologies/${UUID}/restore`],
+  ['patch', `/api/admin/technologies/${UUID}`],
+  ['get', '/api/admin/technologies/other'],
+  ['post', `/api/admin/technologies/${UUID}/archive`],
   ['post', `/api/admin/technologies/${UUID}/restore`],
 ];

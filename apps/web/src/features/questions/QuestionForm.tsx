@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link } from 'react-router';
 import { z } from 'zod';
@@ -61,6 +61,8 @@ export function QuestionForm({
     handleSubmit,
     setError,
     watch,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues });
 
@@ -69,6 +71,24 @@ export function QuestionForm({
       setError(field as keyof FormValues, { message });
     }
   }, [serverErrors, setError]);
+
+  const clientId = watch('clientId');
+  // Technologies follow the department: a department question offers only its own, a global one any.
+  const technologies = useMemo(() => {
+    const list = clientId ? clients.find((c) => c.id === clientId)?.technologies : undefined;
+    return list ? new Set(list) : null;
+  }, [clientId, clients]);
+  const departmentName = clientId ? clients.find((c) => c.id === clientId)?.name : undefined;
+
+  // Choosing another department drops technologies it doesn't have (create only; edit keeps the department).
+  useEffect(() => {
+    if (mode !== 'create' || !technologies) return;
+    const current = getValues('tags');
+    const next = current.filter(
+      (t) => !t.startsWith('technology:') || technologies.has(t.slice('technology:'.length)),
+    );
+    if (next.length !== current.length) setValue('tags', next);
+  }, [mode, technologies, getValues, setValue]);
 
   const textLength = watch('text').length;
   const notesLength = watch('answerNotes').length;
@@ -106,33 +126,6 @@ export function QuestionForm({
         {...register('answerNotes')}
       />
 
-      <div>
-        <p className="mb-1 text-sm font-medium">Tags</p>
-        <p className="mb-3 text-sm text-ink-soft">
-          Pick as many as apply in each group. Tags make the question easy to find.
-        </p>
-        <Controller
-          control={control}
-          name="tags"
-          render={({ field }) => (
-            <TagPicker
-              categories={categories}
-              selected={field.value}
-              onToggle={(tag) =>
-                field.onChange(
-                  field.value.includes(tag)
-                    ? field.value.filter((t) => t !== tag)
-                    : [...field.value, tag],
-                )
-              }
-            />
-          )}
-        />
-        {errors.tags?.message && (
-          <p className="mt-2 text-sm font-medium text-danger">{errors.tags.message}</p>
-        )}
-      </div>
-
       {mode === 'create'
         ? clients.length > 0 && (
             <SelectField
@@ -155,6 +148,35 @@ export function QuestionForm({
               changed after it is added.
             </p>
           )}
+
+      <div>
+        <p className="mb-1 text-sm font-medium">Tags</p>
+        <p className="mb-3 text-sm text-ink-soft">
+          Pick as many as apply in each group. Tags make the question easy to find.
+          {departmentName && ` Technologies are the ones ${departmentName} uses.`}
+        </p>
+        <Controller
+          control={control}
+          name="tags"
+          render={({ field }) => (
+            <TagPicker
+              categories={categories}
+              technologies={technologies}
+              selected={field.value}
+              onToggle={(tag) =>
+                field.onChange(
+                  field.value.includes(tag)
+                    ? field.value.filter((t) => t !== tag)
+                    : [...field.value, tag],
+                )
+              }
+            />
+          )}
+        />
+        {errors.tags?.message && (
+          <p className="mt-2 text-sm font-medium text-danger">{errors.tags.message}</p>
+        )}
+      </div>
 
       <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
         <Link to={cancelTo} className={buttonClass('secondary')}>

@@ -49,8 +49,13 @@ describe('admin gate on the new routes', () => {
     ['post', `/clients/${UUID}/restore`, {}],
     ['get', '/deleted-questions', {}],
     ['post', `/questions/${UUID}/restore`, {}],
-    ['get', '/technologies', {}],
-    ['post', `/technologies/${UUID}/retire`, {}],
+    ['get', `/clients/${UUID}/technologies`, {}],
+    ['post', `/clients/${UUID}/technologies`, { label: 'x' }],
+    ['delete', `/clients/${UUID}/technologies/${UUID}`, {}],
+    ['post', `/clients/${UUID}/technologies/${UUID}/restore`, {}],
+    ['patch', `/technologies/${UUID}`, { label: 'x' }],
+    ['get', '/technologies/other', {}],
+    ['post', `/technologies/${UUID}/archive`, {}],
     ['post', `/technologies/${UUID}/restore`, {}],
   ];
   it.each(routes)('%s %s is ADMIN-only', async (method, path, body) => {
@@ -435,56 +440,237 @@ describe('restore: departments, questions and technologies', () => {
       await db.auditEvent.count({ where: { type: 'QUESTION_RESTORED', questionId: q.id } }),
     ).toBe(1);
   });
+});
 
-  it('retiring a technology hides it from filters and new questions but keeps it on existing ones', async () => {
-    const q = await addQuestion(db, world, {
-      text: 'Uses react',
-      authorId: world.users.authorAcme.id,
-      clientId: world.acme.id,
-      tags: ['technology:react'],
-    });
-    const react = world.tags.get('technology:react')!;
-    const list = await adminCall('get', '/technologies');
-    expect(list.body.items.find((t: { id: string }) => t.id === react)).toMatchObject({
-      retired: false,
-      questionCount: 1,
-    });
+describe('department technologies', () => {
+  // World: Acme offers react + nodejs, Globex offers react. So react is shared; nodejs is exclusive to Acme.
+  const react = () => world.tags.get('technology:react')!;
+  const nodejs = () => world.tags.get('technology:nodejs')!;
+  const list = async (clientId: string) =>
+    (await adminCall('get', `/clients/${clientId}/technologies`)).body;
+  const labels = (rows: { label: string }[]) => rows.map((r) => r.label).sort();
+  const techs = async (u: { id: string }, query = '') =>
+    (await call(u, 'get', `/api/tags${query}`)).body.categories
+      .find((c: { slug: string }) => c.slug === 'technology')
+      .tags.map((t: { value: string; archived: boolean }) => `${t.value}:${t.archived}`)
+      .sort();
 
-    expect((await adminCall('post', `/technologies/${react}/retire`)).status).toBe(204);
-    expect((await adminCall('post', `/technologies/${react}/retire`)).status).toBe(404);
-
-    const techValues = async (query: string) =>
-      (await call(world.users.authorAcme, 'get', `/api/tags${query}`)).body.categories
-        .find((c: { slug: string }) => c.slug === 'technology')
-        .tags.map((t: { value: string; retired: boolean }) => `${t.value}:${t.retired}`);
-    expect(await techValues('')).toContain('react:true');
-    expect(await techValues('?for=filter')).not.toContain('react:true');
-
-    // still on the existing question, and an edit that keeps it is fine
-    const detail = await call(admin(), 'get', `/api/questions/${q.id}`);
-    expect(detail.body.question.tags.map((t: { value: string }) => t.value)).toContain('react');
-    expect(
-      (await call(admin(), 'patch', `/api/questions/${q.id}`, { tags: ['technology:react'] }))
-        .status,
-    ).toBe(200);
-    // but nobody can newly attach it
-    const attach = await call(world.users.authorAcme, 'post', '/api/questions', {
-      text: 'Brand new react question',
-      clientId: world.acme.id,
-      tags: ['technology:react'],
-    });
-    expect(attach.status).toBe(400);
-    expect(attach.body.error.code).toBe('TAG_RETIRED');
-
-    expect((await adminCall('post', `/technologies/${react}/restore`)).status).toBe(204);
-    expect(await techValues('?for=filter')).toContain('react:false');
-    expect(
-      await db.auditEvent.count({ where: { type: { in: ['TAG_RETIRED', 'TAG_RESTORED'] } } }),
-    ).toBe(2);
+  it("lists a department's technologies with shared flags and what could still be added", async () => {
+    const acme = await list(world.acme.id);
+    expect(labels(acme.active)).toEqual(['nodejs', 'react']);
+    expect(acme.active.find((t: { label: string }) => t.label === 'react').shared).toBe(true);
+    expect(acme.active.find((t: { label: string }) => t.label === 'nodejs').shared).toBe(false);
+    expect(acme.available).toEqual([]);
+    expect(labels((await list(world.globex.id)).available)).toEqual(['nodejs']);
+    expect((await adminCall('get', `/clients/${UUID}/technologies`)).status).toBe(404);
   });
 
-  it('only technologies can be retired (not seniority or type tags)', async () => {
-    const mid = world.tags.get('seniority:mid')!;
-    expect((await adminCall('post', `/technologies/${mid}/retire`)).status).toBe(404);
+  it('removing a shared technology only unlinks it; an exclusive one is archived and restorable', async () => {
+    await addQuestion(db, world, {
+      text: 'Node question',
+      authorId: world.users.authorAcme.id,
+      clientId: world.acme.id,
+      tags: ['technology:nodejs'],
+    });
+    expect(
+      (await adminCall('delete', `/clients/${world.acme.id}/technologies/${react()}`)).status,
+    ).toBe(204);
+    expect(labels((await list(world.acme.id)).active)).toEqual(['nodejs']);
+    expect(labels((await list(world.globex.id)).active)).toEqual(['react']); // untouched
+    expect(await techs(world.users.authorGlobex, '?for=filter')).toEqual(['react:false']);
+
+    expect(
+      (await adminCall('delete', `/clients/${world.acme.id}/technologies/${nodejs()}`)).status,
+    ).toBe(204);
+    const acme = await list(world.acme.id);
+    expect(acme.active).toEqual([]);
+    expect(labels(acme.archived)).toEqual(['nodejs']);
+    // hidden from filters and new questions, but kept on the question that has it
+    expect(await techs(world.users.authorAcme, '?for=filter')).not.toContain('nodejs:true');
+    expect(await techs(world.users.authorAcme)).toContain('nodejs:true');
+    const attach = await call(world.users.authorAcme, 'post', '/api/questions', {
+      text: 'A brand new node question',
+      clientId: world.acme.id,
+      tags: ['technology:nodejs'],
+    });
+    expect(attach.body.error.code).toBe('TAG_ARCHIVED');
+
+    expect(
+      (await adminCall('post', `/clients/${world.acme.id}/technologies/${nodejs()}/restore`))
+        .status,
+    ).toBe(204);
+    expect(labels((await list(world.acme.id)).active)).toEqual(['nodejs']);
+    expect(
+      (await adminCall('post', `/clients/${world.acme.id}/technologies/${nodejs()}/restore`))
+        .status,
+    ).toBe(404);
+    expect(
+      await db.auditEvent.count({
+        where: { type: { in: ['TAG_UNLINKED', 'TAG_ARCHIVED', 'TAG_RESTORED'] } },
+      }),
+    ).toBe(3);
+  });
+
+  it('adding links an existing technology by a loose name, un-archives it, or creates a new one', async () => {
+    const before = await db.tag.count();
+    const linked = await adminCall('post', `/clients/${world.globex.id}/technologies`, {
+      label: ' Node.JS ',
+    });
+    expect(linked.status).toBe(201);
+    expect(linked.body.technology).toMatchObject({ id: nodejs(), created: false });
+    expect(await db.tag.count()).toBe(before);
+    expect(labels((await list(world.globex.id)).active)).toEqual(['nodejs', 'react']);
+
+    const created = await adminCall('post', `/clients/${world.globex.id}/technologies`, {
+      label: 'Celery Beat',
+    });
+    expect(created.body.technology.created).toBe(true);
+    const tag = await db.tag.findUniqueOrThrow({ where: { id: created.body.technology.id } });
+    expect(tag).toMatchObject({ value: 'celery-beat', label: 'Celery Beat' });
+    // not offered to Acme until it is added there
+    expect(labels((await list(world.acme.id)).available)).toEqual(['Celery Beat']);
+
+    await db.tag.update({ where: { id: nodejs() }, data: { archivedAt: new Date() } });
+    await adminCall('post', `/clients/${world.acme.id}/technologies`, { label: 'nodejs' });
+    expect((await db.tag.findUniqueOrThrow({ where: { id: nodejs() } })).archivedAt).toBeNull();
+
+    expect(
+      (await adminCall('post', `/clients/${world.globex.id}/technologies`, { label: '+++' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await adminCall('post', `/clients/${world.globex.id}/technologies`, { label: '' })).status,
+    ).toBe(400);
+    expect((await adminCall('post', `/clients/${UUID}/technologies`, { label: 'Go' })).status).toBe(
+      404,
+    );
+  });
+
+  it('renames the label everywhere, never the value, and refuses a clash', async () => {
+    expect(
+      (await adminCall('patch', `/technologies/${react()}`, { label: 'React.js' })).status,
+    ).toBe(200);
+    const tag = await db.tag.findUniqueOrThrow({ where: { id: react() } });
+    expect(tag).toMatchObject({ value: 'react', label: 'React.js' });
+    const clash = await adminCall('patch', `/technologies/${react()}`, { label: 'Node JS' });
+    expect(clash.status).toBe(409);
+    expect(clash.body.error.code).toBe('TECHNOLOGY_EXISTS');
+    expect(
+      (
+        await adminCall('patch', `/technologies/${world.tags.get('seniority:mid')!}`, {
+          label: 'x',
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it('deleting a department archives only its exclusive technologies; restoring brings back only those', async () => {
+    const impact = await adminCall('get', `/clients/${world.acme.id}/impact`);
+    expect(impact.body.technologies).toBe(1); // nodejs; react is shared with Globex
+
+    await adminCall('delete', `/clients/${world.acme.id}`);
+    expect((await db.tag.findUniqueOrThrow({ where: { id: nodejs() } })).archivedAt).not.toBeNull();
+    expect((await db.tag.findUniqueOrThrow({ where: { id: react() } })).archivedAt).toBeNull();
+
+    await adminCall('post', `/clients/${world.acme.id}/restore`);
+    expect((await db.tag.findUniqueOrThrow({ where: { id: nodejs() } })).archivedAt).toBeNull();
+    expect(labels((await list(world.acme.id)).active)).toEqual(['nodejs', 'react']);
+  });
+
+  it('a technology archived earlier by hand is not revived when the department is restored', async () => {
+    await adminCall('delete', `/clients/${world.acme.id}/technologies/${nodejs()}`);
+    await adminCall('delete', `/clients/${world.acme.id}`);
+    await adminCall('post', `/clients/${world.acme.id}/restore`);
+    expect(labels((await list(world.acme.id)).archived)).toEqual(['nodejs']);
+  });
+
+  it("a department question may only use that department's technologies; global ones any; edits keep what they have", async () => {
+    const post = (u: { id: string }, body: object) => call(u, 'post', '/api/questions', body);
+    const outside = await post(world.users.authorGlobex, {
+      text: 'Node for Globex',
+      clientId: world.globex.id,
+      tags: ['technology:nodejs'],
+    });
+    expect(outside.status).toBe(400);
+    expect(outside.body.error.code).toBe('TAG_NOT_IN_DEPARTMENT');
+
+    const inside = await post(world.users.authorAcme, {
+      text: 'Node for Acme',
+      clientId: world.acme.id,
+      tags: ['technology:nodejs', 'seniority:mid'],
+    });
+    expect(inside.status).toBe(201);
+
+    const global = await post(world.users.authorA, {
+      text: 'Global node question',
+      tags: ['technology:nodejs'],
+    });
+    expect(global.status).toBe(201);
+
+    // Globex later drops nothing, but Acme unlinks nodejs: its existing question can still be edited with it
+    await db.clientTag.deleteMany({ where: { clientId: world.acme.id, tagId: nodejs() } });
+    const edit = await call(
+      world.users.authorAcme,
+      'patch',
+      `/api/questions/${inside.body.question.id}`,
+      {
+        text: 'Node for Acme (edited)',
+        tags: ['technology:nodejs'],
+      },
+    );
+    expect(edit.status).toBe(200);
+  });
+
+  it('GET /clients tells each user the technologies of their departments', async () => {
+    const mine = await call(world.users.authorAcme, 'get', '/api/clients');
+    expect(mine.body.items).toMatchObject([{ name: 'Acme', technologies: ['nodejs', 'react'] }]);
+  });
+
+  it("the list filter offers the technologies of the caller's departments (admin: all)", async () => {
+    expect(await techs(world.users.authorGlobex, '?for=filter')).toEqual(['react:false']);
+    expect(await techs(world.users.authorAcme, '?for=filter')).toEqual([
+      'nodejs:false',
+      'react:false',
+    ]);
+    expect(await techs(admin(), '?for=filter')).toEqual(['nodejs:false', 'react:false']);
+    expect(await techs(world.users.authorA, '?for=filter')).toEqual([]); // no department, no global tech use
+  });
+
+  it('technologies no department uses form the "Other" group: flagged, offered to everyone, manageable by an admin', async () => {
+    // Python is linked nowhere in this world, so it is "Other". (react and nodejs belong to departments.)
+    const category = await db.tagCategory.findUniqueOrThrow({ where: { slug: 'technology' } });
+    const loose = await db.tag.create({
+      data: { categoryId: category.id, value: 'go', label: 'Go' },
+    });
+
+    const flagged = async (u: { id: string }, query = '') =>
+      (await call(u, 'get', `/api/tags${query}`)).body.categories
+        .find((c: { slug: string }) => c.slug === 'technology')
+        .tags.filter((t: { other?: boolean }) => t.other)
+        .map((t: { value: string }) => t.value);
+    expect(await flagged(world.users.authorGlobex)).toEqual(['go']);
+    // everyone's filter gets it, on top of their own departments' technologies
+    expect(await techs(world.users.authorGlobex, '?for=filter')).toEqual([
+      'go:false',
+      'react:false',
+    ]);
+
+    const other = await adminCall('get', '/technologies/other');
+    expect(other.body.active).toMatchObject([{ id: loose.id, label: 'Go', archived: false }]);
+
+    expect((await adminCall('post', `/technologies/${loose.id}/archive`)).status).toBe(204);
+    expect((await adminCall('post', `/technologies/${loose.id}/archive`)).status).toBe(404); // already archived
+    expect((await adminCall('get', '/technologies/other')).body.archived).toHaveLength(1);
+    expect(await flagged(world.users.authorGlobex)).toEqual([]);
+    expect((await adminCall('post', `/technologies/${loose.id}/restore`)).status).toBe(204);
+
+    // adding it to a department moves it out of "Other"
+    await adminCall('post', `/clients/${world.globex.id}/technologies`, { label: 'Go' });
+    expect((await adminCall('get', '/technologies/other')).body.active).toEqual([]);
+    expect(await flagged(world.users.authorGlobex)).toEqual([]);
+    // and it can no longer be archived from the Other endpoints
+    const blocked = await adminCall('post', `/technologies/${loose.id}/archive`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.code).toBe('TECHNOLOGY_IN_DEPARTMENT');
   });
 });

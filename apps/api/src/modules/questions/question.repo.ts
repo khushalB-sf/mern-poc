@@ -305,27 +305,13 @@ export async function softDeleteQuestion(db: Queryable, id: string) {
   await db.question.update({ where: { id }, data: { deletedAt: new Date() } });
 }
 
-/**
- * Ids of the tags used by the questions of the actor's departments (admin: every department), so the
- * filter bar can offer only technologies that department covers. An actor with no department gets the
- * tags of global questions instead. Taxonomy only: no counts, and status is deliberately ignored.
- */
-export async function departmentTagIds(db: Queryable, actor: Actor): Promise<Set<string>> {
-  const ofQuestions = (where: Prisma.Sql) =>
-    db.$queryRaw<{ id: string }[]>`
-      SELECT DISTINCT qt.tag_id AS id
-      FROM question_tag qt
-      JOIN question q ON q.id = qt.question_id
-      WHERE q.deleted_at IS NULL AND ${where}`;
-  const inDepartment =
-    actor.role === 'ADMIN'
-      ? Prisma.sql`EXISTS (SELECT 1 FROM client dc WHERE dc.id = q.client_id AND dc.deleted_at IS NULL)`
-      : Prisma.sql`EXISTS (
-          SELECT 1 FROM client_grant g JOIN client dc ON dc.id = g.client_id
-          WHERE g.user_id = ${actor.id}::uuid AND g.client_id = q.client_id AND dc.deleted_at IS NULL
-        )`;
-  let rows = await ofQuestions(inDepartment);
-  if (rows.length === 0) rows = await ofQuestions(Prisma.sql`q.client_id IS NULL`);
+/** Ids of the tags carried by global (department-less) questions: taxonomy only, no counts. */
+export async function globalTagIds(db: Queryable): Promise<Set<string>> {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT DISTINCT qt.tag_id AS id
+    FROM question_tag qt
+    JOIN question q ON q.id = qt.question_id
+    WHERE q.deleted_at IS NULL AND q.client_id IS NULL`;
   return new Set(rows.map((r) => r.id));
 }
 

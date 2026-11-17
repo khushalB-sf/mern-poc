@@ -2,7 +2,6 @@ import type { RouteObject } from 'react-router';
 import { LoginPage } from '../features/auth/LoginPage';
 import { AdminDepartmentsPage } from '../features/admin/AdminDepartmentsPage';
 import { AdminDeletedQuestionsPage } from '../features/admin/AdminDeletedQuestionsPage';
-import { AdminTechnologiesPage } from '../features/admin/AdminTechnologiesPage';
 import { AdminUsersPage } from '../features/admin/AdminUsersPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
 import { RequireRole } from '../features/auth/RequireRole';
@@ -37,7 +36,6 @@ export const routes: RouteObject[] = [
             children: [
               { path: 'admin/users', element: <AdminUsersPage /> },
               { path: 'admin/departments', element: <AdminDepartmentsPage /> },
-              { path: 'admin/technologies', element: <AdminTechnologiesPage /> },
               { path: 'admin/deleted-questions', element: <AdminDeletedQuestionsPage /> },
             ],
           },

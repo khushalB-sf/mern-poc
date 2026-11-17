@@ -15,9 +15,23 @@ export function clientRoutes(db: Db, config: Config) {
         ...(req.user!.role === 'ADMIN' ? {} : { grants: { some: { userId: req.user!.id } } }),
       },
       orderBy: { name: 'asc' },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        technologies: {
+          where: { tag: { archivedAt: null, category: { slug: 'technology' } } },
+          select: { tag: { select: { value: true } } },
+        },
+      },
     });
-    res.json({ items: clients });
+    // `technologies` = values of the department's active technologies; the question form offers only these.
+    res.json({
+      items: clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        technologies: c.technologies.map((t) => t.tag.value).sort(),
+      })),
+    });
   });
   return router;
 }

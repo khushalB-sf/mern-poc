@@ -9,10 +9,15 @@ import {
   listAdminUsers,
   listDeletedDepartments,
   listDeletedQuestions,
-  listTechnologies,
+  listDepartmentTechnologies,
+  listOtherTechnologies,
   restoreDepartment,
   restoreQuestion,
-  setTechnologyRetired,
+  addDepartmentTechnology,
+  removeDepartmentTechnology,
+  renameTechnology,
+  setOtherTechnologyArchived,
+  restoreDepartmentTechnology,
   setUserClients,
   updateDepartment,
   updateUser,
@@ -80,7 +85,8 @@ export const useDeletedDepartments = () =>
 /** Fetched fresh each time the delete dialog opens, so the counts are current. */
 export const useDepartmentImpact = (id: string | null) =>
   useQuery({
-    queryKey: ['admin', 'department-impact', id],
+    // Not under 'admin': deleting the department invalidates that prefix, which would refetch a now-404 impact.
+    queryKey: ['department-impact', id],
     queryFn: ({ signal }) => getDepartmentImpact(id!, signal),
     enabled: id !== null,
     gcTime: 0,
@@ -96,11 +102,26 @@ export const useDeletedQuestions = () =>
 
 export const useRestoreQuestion = () => useAdminMutation((id: string) => restoreQuestion(id));
 
-export const useTechnologies = () =>
+export const useDepartmentTechnologies = (id: string) =>
   useQuery({
-    queryKey: ['admin', 'technologies'],
-    queryFn: ({ signal }) => listTechnologies(signal),
+    queryKey: ['admin', 'department-technologies', id],
+    queryFn: ({ signal }) => listDepartmentTechnologies(id, signal),
   });
 
-export const useSetTechnologyRetired = () =>
-  useAdminMutation((v: { id: string; retired: boolean }) => setTechnologyRetired(v));
+export const useAddDepartmentTechnology = () =>
+  useAdminMutation((v: { id: string; label: string }) => addDepartmentTechnology(v));
+export const useRemoveDepartmentTechnology = () =>
+  useAdminMutation((v: { id: string; tagId: string }) => removeDepartmentTechnology(v));
+export const useRestoreDepartmentTechnology = () =>
+  useAdminMutation((v: { id: string; tagId: string }) => restoreDepartmentTechnology(v));
+export const useRenameTechnology = () =>
+  useAdminMutation((v: { tagId: string; label: string }) => renameTechnology(v));
+
+export const useOtherTechnologies = () =>
+  useQuery({
+    queryKey: ['admin', 'other-technologies'],
+    queryFn: ({ signal }) => listOtherTechnologies(signal),
+  });
+
+export const useSetOtherTechnologyArchived = () =>
+  useAdminMutation((v: { id: string; archived: boolean }) => setOtherTechnologyArchived(v));

@@ -5,7 +5,7 @@ import type {
   Department,
   DepartmentImpact,
   Role,
-  Technology,
+  DepartmentTechnologies,
 } from '../../shared/api/types';
 
 export const listAdminUsers = (signal?: AbortSignal) =>
@@ -83,10 +83,30 @@ export const listDeletedQuestions = (signal?: AbortSignal) =>
 export const restoreQuestion = (id: string) =>
   apiFetch<void>(`/admin/questions/${id}/restore`, { method: 'POST' });
 
-export const listTechnologies = (signal?: AbortSignal) =>
-  apiFetch<{ items: Technology[] }>('/admin/technologies', { signal }).then((r) => r.items);
+export const listDepartmentTechnologies = (id: string, signal?: AbortSignal) =>
+  apiFetch<DepartmentTechnologies>(`/admin/clients/${id}/technologies`, { signal });
 
-export const setTechnologyRetired = ({ id, retired }: { id: string; retired: boolean }) =>
-  apiFetch<void>(`/admin/technologies/${id}/${retired ? 'retire' : 'restore'}`, {
+export const addDepartmentTechnology = ({ id, label }: { id: string; label: string }) =>
+  apiFetch<{ technology: { id: string; label: string; created: boolean } }>(
+    `/admin/clients/${id}/technologies`,
+    { method: 'POST', body: { label } },
+  ).then((r) => r.technology);
+
+export const removeDepartmentTechnology = ({ id, tagId }: { id: string; tagId: string }) =>
+  apiFetch<void>(`/admin/clients/${id}/technologies/${tagId}`, { method: 'DELETE' });
+
+export const restoreDepartmentTechnology = ({ id, tagId }: { id: string; tagId: string }) =>
+  apiFetch<void>(`/admin/clients/${id}/technologies/${tagId}/restore`, { method: 'POST' });
+
+export const renameTechnology = ({ tagId, label }: { tagId: string; label: string }) =>
+  apiFetch<void>(`/admin/technologies/${tagId}`, { method: 'PATCH', body: { label } });
+
+export const listOtherTechnologies = (signal?: AbortSignal) =>
+  apiFetch<Pick<DepartmentTechnologies, 'active' | 'archived'>>('/admin/technologies/other', {
+    signal,
+  });
+
+export const setOtherTechnologyArchived = ({ id, archived }: { id: string; archived: boolean }) =>
+  apiFetch<void>(`/admin/technologies/${id}/${archived ? 'archive' : 'restore'}`, {
     method: 'POST',
   });

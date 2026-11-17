@@ -3,6 +3,7 @@ import { loginSchema } from '../modules/auth/routes.js';
 import {
   createClientSchema,
   createUserSchema,
+  technologyBody,
   updateClientSchema,
   updateUserSchema,
   userClientsSchema,
@@ -50,6 +51,12 @@ const R = {
 
 const idParam = {
   name: 'id',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+};
+const tagIdParam = {
+  name: 'tagId',
   in: 'path',
   required: true,
   schema: { type: 'string', format: 'uuid' },
@@ -261,6 +268,7 @@ export function buildOpenApi() {
         UserClientsBody: bodySchema(userClientsSchema),
         CreateClientBody: bodySchema(createClientSchema),
         UpdateClientBody: bodySchema(updateClientSchema),
+        TechnologyBody: bodySchema(technologyBody),
       },
     },
     paths: {
@@ -368,7 +376,8 @@ export function buildOpenApi() {
                             properties: {
                               value: { type: 'string' },
                               label: { type: 'string' },
-                              retired: { type: 'boolean' },
+                              archived: { type: 'boolean' },
+                              other: { type: 'boolean' },
                             },
                           },
                         },
@@ -827,17 +836,103 @@ export function buildOpenApi() {
           },
         },
       },
-      '/admin/technologies': {
+      '/admin/clients/{id}/technologies': {
         get: {
           tags: ['Admin'],
-          summary: 'Technologies with usage counts and retired flag (ADMIN)',
+          summary: "A department's technologies (ADMIN)",
+          description:
+            'Active and archived technologies of the department, plus the active ones it does not have yet (for the add box). `shared` means another live department uses it too.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            200: {
+              description: 'OK',
+              content: json({
+                type: 'object',
+                properties: {
+                  active: { type: 'array', items: { type: 'object' } },
+                  archived: { type: 'array', items: { type: 'object' } },
+                  available: { type: 'array', items: { type: 'object' } },
+                },
+              }),
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such department', 'NOT_FOUND', 'Department not found'),
+          },
+        },
+        post: {
+          tags: ['Admin'],
+          summary: 'Add a technology to a department (ADMIN)',
+          description:
+            'Links the existing technology when the name matches ("Node.js" = "nodejs"), un-archiving it if needed; otherwise creates it.',
+          security: secured,
+          parameters: [idParam],
+          requestBody: { required: true, content: json(ref('TechnologyBody')) },
+          responses: {
+            201: { description: 'Linked or created' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such department', 'NOT_FOUND', 'Department not found'),
+          },
+        },
+      },
+      '/admin/clients/{id}/technologies/{tagId}': {
+        delete: {
+          tags: ['Admin'],
+          summary: 'Remove a technology from a department (ADMIN)',
+          description:
+            'A technology another live department also uses is unlinked from this one. Otherwise it is archived (hidden from pickers and filters, kept on existing questions) and can be restored.',
+          security: secured,
+          parameters: [idParam, tagIdParam],
+          responses: {
+            204: { description: 'Removed' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse(
+              'Not in this department',
+              'NOT_FOUND',
+              'Technology not found in this department',
+            ),
+          },
+        },
+      },
+      '/admin/clients/{id}/technologies/{tagId}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore an archived technology of a department (ADMIN)',
+          security: secured,
+          parameters: [idParam, tagIdParam],
+          responses: {
+            204: { description: 'Restored' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse(
+              'Not archived here',
+              'NOT_FOUND',
+              'Archived technology not found in this department',
+            ),
+          },
+        },
+      },
+      '/admin/technologies/other': {
+        get: {
+          tags: ['Admin'],
+          summary: 'Technologies no department uses, the "Other" group (ADMIN)',
           security: secured,
           responses: {
             200: {
-              description: 'All technologies, alphabetical',
+              description: 'Active and archived',
               content: json({
                 type: 'object',
-                properties: { items: { type: 'array', items: { type: 'object' } } },
+                properties: {
+                  active: { type: 'array', items: { type: 'object' } },
+                  archived: { type: 'array', items: { type: 'object' } },
+                },
               }),
             },
             401: R[401],
@@ -845,27 +940,31 @@ export function buildOpenApi() {
           },
         },
       },
-      '/admin/technologies/{id}/retire': {
+      '/admin/technologies/{id}/archive': {
         post: {
           tags: ['Admin'],
-          summary: 'Retire a technology (ADMIN)',
-          description:
-            'Hidden from pickers and filters and cannot be added to questions; stays on questions that already have it.',
+          summary: 'Archive an "Other" technology (ADMIN)',
+          description: 'Only for a technology no live department uses; otherwise 409.',
           security: secured,
           parameters: [idParam],
           responses: {
-            204: { description: 'Retired' },
+            204: { description: 'Archived' },
             400: R[400],
             401: R[401],
             403: R[403],
             404: errorResponse('No such technology', 'NOT_FOUND', 'Technology not found'),
+            409: errorResponse(
+              'Belongs to a department',
+              'TECHNOLOGY_IN_DEPARTMENT',
+              'This technology belongs to a department. Manage it from there.',
+            ),
           },
         },
       },
       '/admin/technologies/{id}/restore': {
         post: {
           tags: ['Admin'],
-          summary: 'Restore a retired technology (ADMIN)',
+          summary: 'Restore an archived "Other" technology (ADMIN)',
           security: secured,
           parameters: [idParam],
           responses: {
@@ -873,7 +972,34 @@ export function buildOpenApi() {
             400: R[400],
             401: R[401],
             403: R[403],
-            404: errorResponse('Not retired', 'NOT_FOUND', 'Retired technology not found'),
+            404: errorResponse('No such technology', 'NOT_FOUND', 'Technology not found'),
+            409: errorResponse(
+              'Belongs to a department',
+              'TECHNOLOGY_IN_DEPARTMENT',
+              'This technology belongs to a department. Manage it from there.',
+            ),
+          },
+        },
+      },
+      '/admin/technologies/{id}': {
+        patch: {
+          tags: ['Admin'],
+          summary: 'Rename a technology (ADMIN)',
+          description: 'Changes the label everywhere it is used. The value (slug) never changes.',
+          security: secured,
+          parameters: [idParam],
+          requestBody: { required: true, content: json(ref('TechnologyBody')) },
+          responses: {
+            200: { description: 'Renamed' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such technology', 'NOT_FOUND', 'Technology not found'),
+            409: errorResponse(
+              'Name already taken',
+              'TECHNOLOGY_EXISTS',
+              'A technology with this name already exists',
+            ),
           },
         },
       },

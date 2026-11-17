@@ -102,7 +102,12 @@ export function QuestionFormPage({ mode }: { mode: 'create' | 'edit' }) {
   return mode === 'create' ? (
     <CreateView categories={tags.data} clients={clients.data} admin={isAdmin(me)} />
   ) : (
-    <EditView question={existing.data!} categories={tags.data} admin={isAdmin(me)} />
+    <EditView
+      question={existing.data!}
+      categories={tags.data}
+      clients={clients.data}
+      admin={isAdmin(me)}
+    />
   );
 }
 
@@ -187,10 +192,12 @@ function CreateView({
 function EditView({
   question,
   categories,
+  clients,
   admin,
 }: {
   question: Question;
   categories: Categories;
+  clients: NonNullable<ReturnType<typeof useClients>['data']>;
   admin: boolean;
 }) {
   const navigate = useNavigate();
@@ -210,7 +217,7 @@ function EditView({
           clientId: question.client?.id ?? '',
         }}
         categories={categories}
-        clients={[]}
+        clients={clients}
         lockedClientName={question.client?.name}
         submitting={update.isPending}
         formError={formError}

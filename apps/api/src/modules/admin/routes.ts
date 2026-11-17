@@ -12,17 +12,24 @@ import {
   deleteUser,
   listClients,
   listDeletedQuestionsForAdmin,
-  listTechnologies,
   listUsers,
   restoreClient,
   restoreDeletedQuestion,
-  setTechnologyRetired,
   setUserClients,
   updateClient,
   updateUser,
   type NewUser,
   type UserPatch,
 } from './service.js';
+import {
+  addDepartmentTechnology,
+  listDepartmentTechnologies,
+  listOtherTechnologies,
+  removeDepartmentTechnology,
+  renameTechnology,
+  restoreDepartmentTechnology,
+  setOtherTechnologyArchived,
+} from './technologies.js';
 
 const idParams = z.object({ id: z.uuid() });
 
@@ -55,6 +62,7 @@ export const updateUserSchema = z
   })
   .refine((o) => Object.keys(o).length > 0, 'At least one field is required');
 export const userClientsSchema = z.strictObject({ clientIds: z.array(z.uuid()).max(100) });
+export const technologyBody = z.strictObject({ label: z.string().trim().min(1).max(50) });
 export const createClientSchema = z.strictObject({ name, description: description.optional() });
 export const updateClientSchema = z
   .strictObject({ name: name.optional(), description: description.optional() })
@@ -143,20 +151,69 @@ export function adminRoutes(db: Db, config: Config) {
     res.status(204).end();
   });
 
-  router.get('/technologies', async (_req, res) => {
-    res.json({ items: await listTechnologies(db) });
+  router.get('/technologies/other', async (_req, res) => {
+    res.json(await listOtherTechnologies(db));
   });
 
-  for (const [action, retired] of [
-    ['retire', true],
+  for (const [action, archived] of [
+    ['archive', true],
     ['restore', false],
   ] as const) {
     router.post(`/technologies/:id/${action}`, validateParams(idParams), async (req, res) => {
       const { id } = res.locals.params as z.infer<typeof idParams>;
-      await setTechnologyRetired(db, req.log, req.user!, id, retired);
+      await setOtherTechnologyArchived(db, req.log, req.user!, id, archived);
       res.status(204).end();
     });
   }
+
+  const clientTagParams = z.object({ id: z.uuid(), tagId: z.uuid() });
+
+  router.get('/clients/:id/technologies', validateParams(idParams), async (_req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    res.json(await listDepartmentTechnologies(db, id));
+  });
+
+  router.post(
+    '/clients/:id/technologies',
+    validateParams(idParams),
+    validateBody(technologyBody),
+    async (req, res) => {
+      const { id } = res.locals.params as z.infer<typeof idParams>;
+      res.status(201).json({
+        technology: await addDepartmentTechnology(db, req.log, req.user!, id, req.body.label),
+      });
+    },
+  );
+
+  router.delete(
+    '/clients/:id/technologies/:tagId',
+    validateParams(clientTagParams),
+    async (req, res) => {
+      const { id, tagId } = res.locals.params as z.infer<typeof clientTagParams>;
+      await removeDepartmentTechnology(db, req.log, req.user!, id, tagId);
+      res.status(204).end();
+    },
+  );
+
+  router.post(
+    '/clients/:id/technologies/:tagId/restore',
+    validateParams(clientTagParams),
+    async (req, res) => {
+      const { id, tagId } = res.locals.params as z.infer<typeof clientTagParams>;
+      await restoreDepartmentTechnology(db, req.log, req.user!, id, tagId);
+      res.status(204).end();
+    },
+  );
+
+  router.patch(
+    '/technologies/:id',
+    validateParams(idParams),
+    validateBody(technologyBody),
+    async (req, res) => {
+      const { id } = res.locals.params as z.infer<typeof idParams>;
+      res.json({ technology: await renameTechnology(db, req.log, req.user!, id, req.body.label) });
+    },
+  );
 
   return router;
 }

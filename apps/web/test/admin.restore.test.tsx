@@ -50,55 +50,6 @@ describe('restore: departments', () => {
   });
 });
 
-describe('technologies', () => {
-  const techs = [
-    { id: 't1', value: 'react', label: 'React', retired: false, questionCount: 5 },
-    { id: 't2', value: 'angular', label: 'Angular', retired: true, questionCount: 2 },
-  ];
-  const handlers = { ...admin, 'GET /api/admin/technologies': { body: { items: techs } } };
-
-  it('splits in-use from retired, with counts', async () => {
-    mockApi(handlers);
-    renderApp('/admin/technologies');
-    const active = await screen.findByRole('list', { name: 'Technologies' });
-    expect(active).toHaveTextContent('React');
-    expect(active).toHaveTextContent('5 questions');
-    expect(screen.getByRole('list', { name: 'Retired technologies' })).toHaveTextContent('Angular');
-  });
-
-  it('retire asks first and says existing questions keep it', async () => {
-    const calls = mockApi({
-      ...handlers,
-      'POST /api/admin/technologies/t1/retire': { status: 204 },
-    });
-    renderApp('/admin/technologies');
-    await userEvent.click(await screen.findByRole('button', { name: 'Retire React' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Retire React?' });
-    expect(dialog).toHaveTextContent('The 5 questions that use it keep it');
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Retire technology' }));
-    expect(await screen.findByText('Retired React')).toBeInTheDocument();
-    expect(calls.find((c) => c.method === 'POST')!.path).toBe('/api/admin/technologies/t1/retire');
-  });
-
-  it('restores a retired technology', async () => {
-    const calls = mockApi({
-      ...handlers,
-      'POST /api/admin/technologies/t2/restore': { status: 204 },
-    });
-    renderApp('/admin/technologies');
-    await userEvent.click(await screen.findByRole('button', { name: 'Restore Angular' }));
-    expect(await screen.findByText('Restored Angular')).toBeInTheDocument();
-    expect(calls.find((c) => c.method === 'POST')!.path).toBe('/api/admin/technologies/t2/restore');
-  });
-
-  it('blocks non-admins', async () => {
-    mockApi(baseHandlers);
-    renderApp('/admin/technologies');
-    expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument();
-  });
-});
-
 describe('deleted questions', () => {
   const items = [
     {

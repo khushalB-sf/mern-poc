@@ -35,12 +35,14 @@ export interface QuestionPage {
 export interface TagCategory {
   slug: string;
   name: string;
-  tags: { value: string; label: string; retired?: boolean }[];
+  tags: { value: string; label: string; archived?: boolean; other?: boolean }[];
 }
 
 export interface Client {
   id: string;
   name: string;
+  /** Values of the department's active technologies (only on the signed-in user's own list). */
+  technologies?: string[];
 }
 
 export type HistoryType =
@@ -82,6 +84,8 @@ export interface DepartmentImpact {
   questions: number;
   pending: number;
   users: number;
+  /** Technologies only this department uses; they are archived with it. */
+  technologies: number;
 }
 
 export interface DeletedQuestion {
@@ -95,10 +99,20 @@ export interface DeletedQuestion {
   departmentDeleted: boolean;
 }
 
-export interface Technology {
+/** A technology as the admin sees it under one department. */
+export interface DepartmentTechnology {
   id: string;
   value: string;
   label: string;
-  retired: boolean;
+  archived: boolean;
   questionCount: number;
+  /** Another live department uses it too, so removing it here only unlinks it. */
+  shared: boolean;
+}
+
+export interface DepartmentTechnologies {
+  active: DepartmentTechnology[];
+  archived: DepartmentTechnology[];
+  /** Active technologies this department does not have yet. */
+  available: { id: string; label: string }[];
 }

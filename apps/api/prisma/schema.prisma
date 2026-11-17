@@ -38,8 +38,12 @@ enum AuditType {
   CLIENT_DELETED
   CLIENT_RESTORED
   QUESTION_RESTORED
-  TAG_RETIRED
+  TAG_ARCHIVED
   TAG_RESTORED
+  TAG_CREATED
+  TAG_UPDATED
+  TAG_LINKED
+  TAG_UNLINKED
 }
 
 model AppUser {
@@ -61,13 +65,14 @@ model AppUser {
 }
 
 model Client {
-  id          String        @id @default(uuid()) @db.Uuid
-  name        String        @unique
-  description String?
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @unique
+  description  String?
   // Soft delete: hides the department and its questions; history and grants stay.
-  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz()
-  grants      ClientGrant[]
-  questions   Question[]
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz()
+  grants       ClientGrant[]
+  questions    Question[]
+  technologies ClientTag[]
 
   @@map("client")
 }
@@ -97,13 +102,26 @@ model Tag {
   categoryId String        @map("category_id") @db.Uuid
   value      String
   label      String
-  // Retired: hidden from pickers and filters and not attachable to new questions, but kept on existing ones.
-  retiredAt  DateTime?     @map("retired_at") @db.Timestamptz()
+  // Archived: hidden from pickers and filters and not attachable to new questions, but kept on existing ones.
+  archivedAt DateTime?     @map("archived_at") @db.Timestamptz()
   category   TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   questions  QuestionTag[]
+  clients    ClientTag[]
 
   @@unique([categoryId, value])
   @@map("tag")
+}
+
+// A technology offered to a department's questions. Many-to-many: Node.js can sit under MERN and MEAN.
+model ClientTag {
+  clientId String @map("client_id") @db.Uuid
+  tagId    String @map("tag_id") @db.Uuid
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Restrict)
+
+  @@id([clientId, tagId])
+  @@index([tagId])
+  @@map("client_tag")
 }
 
 model Question {
