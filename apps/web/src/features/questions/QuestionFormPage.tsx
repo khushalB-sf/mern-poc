@@ -3,10 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../shared/api/client';
 import type { DuplicateMatch, Question } from '../../shared/api/types';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
+import { Page, PageHeader } from '../../shared/ui/Page';
 import { buttonClass } from '../../shared/ui/Button';
 import { ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
-import { canCreate, canEdit, useMe } from '../auth/hooks';
+import { canCreate, canEdit, isAdmin, useMe } from '../auth/hooks';
 import { DuplicateDialog } from './components/DuplicateDialog';
 import { useClients, useCreateQuestion, useQuestion, useTags, useUpdateQuestion } from './hooks';
 import { QuestionForm, type FormValues } from './QuestionForm';
@@ -30,7 +31,7 @@ function explain(e: unknown): { formError?: string; fields?: FieldErrors } {
   }
   if (e.code.startsWith('UNKNOWN_TAG'))
     return { formError: `${e.message}. Reload the page to get the latest tags.` };
-  if (e.status === 404) return { fields: { clientId: "That client isn't available to you." } };
+  if (e.status === 404) return { fields: { clientId: "That department isn't available to you." } };
   if (e.status === 403)
     return { formError: 'Your account has read-only access, so you cannot do this.' };
   if (e.status === 429) return { formError: 'Too many requests. Wait a moment, then try again.' };
@@ -50,7 +51,7 @@ export function QuestionFormPage({ mode }: { mode: 'create' | 'edit' }) {
     return (
       <Shell title="Add question">
         <ErrorState title="Your account is read-only">
-          Ask an author or reviewer if you'd like to add questions.
+          Only authors and admins can add questions. Ask an admin if you need author access.
         </ErrorState>
         <BackLink to="/" />
       </Shell>
@@ -89,7 +90,8 @@ export function QuestionFormPage({ mode }: { mode: 'create' | 'edit' }) {
       return (
         <Shell title="Edit question">
           <ErrorState title="You can't edit this question">
-            Authors can edit their own questions. Reviewers can edit any question.
+            Only the author of a question, or an admin, can edit it. Reviewers approve or reject it
+            instead.
           </ErrorState>
           <BackLink to={`/questions/${id}`} />
         </Shell>
@@ -98,9 +100,9 @@ export function QuestionFormPage({ mode }: { mode: 'create' | 'edit' }) {
   }
 
   return mode === 'create' ? (
-    <CreateView categories={tags.data} clients={clients.data} />
+    <CreateView categories={tags.data} clients={clients.data} admin={isAdmin(me)} />
   ) : (
-    <EditView question={existing.data!} categories={tags.data} />
+    <EditView question={existing.data!} categories={tags.data} admin={isAdmin(me)} />
   );
 }
 
@@ -109,9 +111,11 @@ type Categories = NonNullable<ReturnType<typeof useTags>['data']>;
 function CreateView({
   categories,
   clients,
+  admin,
 }: {
   categories: Categories;
   clients: NonNullable<ReturnType<typeof useClients>['data']>;
+  admin: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -137,7 +141,7 @@ function CreateView({
       {
         onSuccess: (q) => {
           setDuplicate(null);
-          toast('Question added');
+          toast(admin ? 'Question added' : 'Question submitted for review');
           navigate(`/questions/${q.id}`);
         },
         onError: (e) => {
@@ -165,6 +169,7 @@ function CreateView({
         formError={formError}
         serverErrors={serverErrors}
         cancelTo="/"
+        goesLive={admin}
         onSubmit={(v) => submit(v)}
       />
       <DuplicateDialog
@@ -179,7 +184,15 @@ function CreateView({
   );
 }
 
-function EditView({ question, categories }: { question: Question; categories: Categories }) {
+function EditView({
+  question,
+  categories,
+  admin,
+}: {
+  question: Question;
+  categories: Categories;
+  admin: boolean;
+}) {
   const navigate = useNavigate();
   const toast = useToast();
   const update = useUpdateQuestion(question.id);
@@ -203,6 +216,7 @@ function EditView({ question, categories }: { question: Question; categories: Ca
         formError={formError}
         serverErrors={serverErrors}
         cancelTo={`/questions/${question.id}`}
+        goesLive={admin}
         onSubmit={(v) => {
           setFormError(undefined);
           setServerErrors(undefined);
@@ -210,7 +224,7 @@ function EditView({ question, categories }: { question: Question; categories: Ca
             { text: v.text, answerNotes: v.answerNotes, tags: v.tags },
             {
               onSuccess: () => {
-                toast('Changes saved');
+                toast(admin ? 'Changes saved' : 'Changes saved and sent for review');
                 navigate(`/questions/${question.id}`);
               },
               onError: (e) => {
@@ -228,16 +242,16 @@ function EditView({ question, categories }: { question: Question; categories: Ca
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:py-8">
-      <h1 className="mb-6 font-serif text-3xl font-semibold">{title}</h1>
+    <Page width="md">
+      <PageHeader title={title} />
       {children}
-    </div>
+    </Page>
   );
 }
 
 function BackLink({ to }: { to: string }) {
   return (
-    <p className="text-center">
+    <p className="mt-4 text-center">
       <Link to={to} className={buttonClass('secondary')}>
         Go back
       </Link>

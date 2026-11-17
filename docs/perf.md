@@ -16,3 +16,16 @@ What this does and does not show:
 - Planning time (10.8 ms) is significant relative to execution on the combined query; Prisma issues it as a simple query on every request. Not optimised.
 
 No indexes were added in response to these plans; the ones in the init migration were sufficient at this size.
+
+## Re-check after roles and review status (visibility predicate changed)
+
+Same method, 5,007 rows seeded (5,000 generated, 4 fixtures, 3 pending/rejected demo rows), one warm run each, `ANALYZE` first, users granted Acme. Execution times in ms:
+
+| Role | Newest first | Keyword `cache` | `status=PENDING` queue |
+|---|---|---|---|
+| USER | 0.07 | 24.2 | 0.02 (planner proves it empty: approved-only AND pending) |
+| AUTHOR | 0.05 | 23.6 | 0.03 (`question_status_idx`) |
+| REVIEWER | 0.05 | 27.8 | 0.04 (`question_status_idx`) |
+| ADMIN | 0.03 | 26.2 | 0.03 (`question_status_idx`) |
+
+The role and status terms did not change the plans: newest-first still walks `question_created_at_id_idx` and stops at 20 rows, keyword search still uses the GIN `question_search_idx`, and the grant check is still a lookup into the tiny `client_grant` table. The keyword numbers are a little above the earlier 19.5 ms, but that earlier run also had tag filters and a different machine state, so this is not a like-for-like regression claim. Duplicate-check (`%` trigram) was not re-measured; its predicate only gained the same status term.

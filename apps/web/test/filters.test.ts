@@ -19,8 +19,19 @@ describe('filters <-> URL', () => {
       q: 'hooks',
       tags: ['seniority:senior', 'technology:react'],
       clientId: 'c1',
+      status: '',
       page: 3,
     });
+  });
+
+  it('carries a valid review status and drops an unknown one', () => {
+    expect(parseFilters(new URLSearchParams('status=PENDING')).status).toBe('PENDING');
+    expect(parseFilters(new URLSearchParams('status=BOGUS')).status).toBe('');
+    expect(toSearchParams({ ...EMPTY_FILTERS, status: 'REJECTED' }).get('status')).toBe('REJECTED');
+    expect(
+      new URLSearchParams(toApiQuery({ ...EMPTY_FILTERS, status: 'PENDING' })).get('status'),
+    ).toBe('PENDING');
+    expect(new URLSearchParams(toApiQuery(EMPTY_FILTERS)).has('status')).toBe(false);
   });
 
   it('uses safe defaults for an empty or hostile URL', () => {
@@ -33,7 +44,13 @@ describe('filters <-> URL', () => {
 
   it('round-trips, and omits defaults so the clean view has a clean URL', () => {
     expect(toSearchParams(EMPTY_FILTERS).toString()).toBe('');
-    const f = { q: 'a b', tags: ['type:coding', 'technology:go'], clientId: 'c1', page: 2 };
+    const f = {
+      q: 'a b',
+      tags: ['type:coding', 'technology:go'],
+      clientId: 'c1',
+      status: 'APPROVED' as const,
+      page: 2,
+    };
     expect(parseFilters(toSearchParams(f))).toEqual({
       ...f,
       tags: ['technology:go', 'type:coding'],
@@ -59,8 +76,14 @@ describe('filters <-> URL', () => {
 
   it('counts active filters (the keyword is not a filter)', () => {
     expect(
-      activeFilterCount({ ...EMPTY_FILTERS, q: 'x', tags: ['a:b', 'c:d'], clientId: 'c1' }),
-    ).toBe(3);
+      activeFilterCount({
+        ...EMPTY_FILTERS,
+        q: 'x',
+        tags: ['a:b', 'c:d'],
+        clientId: 'c1',
+        status: 'PENDING',
+      }),
+    ).toBe(4);
     expect(hasAnyFilter({ ...EMPTY_FILTERS, q: 'x' })).toBe(true);
     expect(hasAnyFilter(EMPTY_FILTERS)).toBe(false);
   });

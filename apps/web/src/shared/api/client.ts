@@ -39,7 +39,7 @@ function refreshSession(): Promise<boolean> {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal | undefined;
   /** Internal: set on the retry so a second 401 cannot loop. */

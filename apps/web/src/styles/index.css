@@ -2,59 +2,78 @@
 @import '@fontsource-variable/source-serif-4';
 
 /*
-  Design tokens. Paper and ink for reading; petrol for actions; amber is reserved for one meaning only:
-  "restricted to a client". Dark values follow the system setting.
+  Design tokens. Cool paper and ink for reading; indigo for actions. Amber is reserved for one meaning
+  only: "restricted to a client". Pending review has its own sky tone so the two never look alike.
+  The sidebar is dark in both schemes. Dark values follow the system setting.
 */
 :root {
   color-scheme: light dark;
-  --paper: #f4f6f5;
+  --paper: #f5f6fa;
   --surface: #ffffff;
-  --ink: #14212b;
-  --ink-soft: #4a5b67;
-  --line: #d8dfdd;
-  --control: #6f807b;
-  --accent: #0e5a64;
-  --accent-hover: #0a474f;
+  --surface-2: #f0f2f8;
+  --ink: #0f172a;
+  --ink-soft: #536074;
+  --line: #e3e7ef;
+  --control: #7a869c;
+  --accent: #4338ca;
+  --accent-hover: #3730a3;
   --accent-ink: #ffffff;
-  --accent-soft: #e1f0f0;
+  --accent-soft: #eef0ff;
   --restricted-ink: #92400e;
   --restricted-bg: #fef3c7;
   --restricted-edge: #d97706;
+  --pending-ink: #075985;
+  --pending-bg: #e0f2fe;
   --danger: #b42318;
   --danger-bg: #fee4e2;
   --ok: #067647;
+  --ok-bg: #dcfae6;
   --cat-technology: #0e7c86;
   --cat-seniority: #7a5bbf;
   --cat-type: #5b6f7c;
+  --side-bg: #0f1226;
+  --side-ink: #e6e9f8;
+  --side-soft: #a3abc9;
+  --side-line: #232846;
+  --side-active: #1f2557;
+  --side-ring: #a5b4fc;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0e161b;
-    --surface: #141f26;
-    --ink: #e7eef1;
-    --ink-soft: #9fb1bb;
-    --line: #25343d;
-    --control: #6c8491;
-    --accent: #4fb6bd;
-    --accent-hover: #6fc7cd;
-    --accent-ink: #06262a;
-    --accent-soft: #17353a;
+    --paper: #0a0d1a;
+    --surface: #121629;
+    --surface-2: #181d33;
+    --ink: #e8ebf7;
+    --ink-soft: #9aa4c2;
+    --line: #232a45;
+    --control: #5f6b8c;
+    --accent: #8b93ff;
+    --accent-hover: #a5abff;
+    --accent-ink: #0a0d1a;
+    --accent-soft: #1c2150;
     --restricted-ink: #fcd34d;
     --restricted-bg: #3a2a08;
     --restricted-edge: #f59e0b;
+    --pending-ink: #7dd3fc;
+    --pending-bg: #0c2a3d;
     --danger: #f97066;
     --danger-bg: #3b1613;
     --ok: #4ade80;
+    --ok-bg: #0f2e1f;
     --cat-technology: #4fb6bd;
     --cat-seniority: #b69cf0;
     --cat-type: #8da3b0;
+    --side-bg: #070913;
+    --side-line: #1a1f38;
+    --side-active: #1c2150;
   }
 }
 
 @theme inline {
   --color-paper: var(--paper);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-line: var(--line);
@@ -66,9 +85,18 @@
   --color-restricted-ink: var(--restricted-ink);
   --color-restricted-bg: var(--restricted-bg);
   --color-restricted-edge: var(--restricted-edge);
+  --color-pending-ink: var(--pending-ink);
+  --color-pending-bg: var(--pending-bg);
   --color-danger: var(--danger);
   --color-danger-bg: var(--danger-bg);
   --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-side-bg: var(--side-bg);
+  --color-side-ink: var(--side-ink);
+  --color-side-soft: var(--side-soft);
+  --color-side-line: var(--side-line);
+  --color-side-active: var(--side-active);
+  --color-side-ring: var(--side-ring);
   --font-serif: 'Source Serif 4 Variable', ui-serif, Georgia, 'Times New Roman', serif;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -79,6 +107,12 @@
     background: var(--paper);
     color: var(--ink);
     -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2 {
+    letter-spacing: -0.01em;
+    text-wrap: pretty;
   }
   body {
     min-height: 100dvh;
@@ -87,13 +121,14 @@
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: 4px;
   }
   ::selection {
     background: var(--accent-soft);
   }
   dialog::backdrop {
-    background: rgb(10 20 26 / 0.55);
+    background: rgb(8 10 25 / 0.6);
+    backdrop-filter: blur(2px);
   }
   @media (prefers-reduced-motion: reduce) {
     *,

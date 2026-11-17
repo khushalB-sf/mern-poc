@@ -1,4 +1,5 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { baseHandlers, mockApi, question, renderApp, USER } from './helpers';
 
@@ -96,5 +97,68 @@ describe('question detail', () => {
       'href',
       '/',
     );
+  });
+
+  describe('admin controls', () => {
+    const ADMIN = { ...USER, id: 'adm', name: 'Ada Admin', role: 'ADMIN' } as const;
+    const asAdmin = { 'GET /api/auth/me': { body: { user: ADMIN } } };
+    const other = question({ author: { id: 'other', name: 'Bob' }, status: 'APPROVED' });
+
+    it('an admin can edit anyone’s question, change the decision and delete it', async () => {
+      mockApi({ ...handlers(other), ...asAdmin });
+      renderApp('/questions/q1');
+      expect(await screen.findByRole('link', { name: /Edit question/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete question' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Change the decision' })).toBeInTheDocument();
+      // An admin's edit does not go back for review, so no warning.
+      expect(screen.queryByText(/sends it back for review/)).toBeNull();
+    });
+
+    it.each(['AUTHOR', 'REVIEWER', 'USER'] as const)('%s gets no Delete button', async (role) => {
+      mockApi({
+        ...handlers(question({ status: 'APPROVED' })),
+        'GET /api/auth/me': { body: { user: { ...USER, role } } },
+      });
+      renderApp('/questions/q1');
+      await screen.findByRole('heading', { level: 1 });
+      expect(screen.queryByRole('button', { name: 'Delete question' })).toBeNull();
+    });
+
+    it('delete asks first; cancel does nothing, confirm deletes and returns to the list', async () => {
+      const calls = mockApi({
+        ...handlers(other),
+        ...asAdmin,
+        'DELETE /api/questions/q1': { status: 204 },
+        'GET /api/questions': { body: { items: [], page: { limit: 20, offset: 0, total: 0 } } },
+      });
+      const { router } = renderApp('/questions/q1');
+      await userEvent.click(await screen.findByRole('button', { name: 'Delete question' }));
+      let dialog = await screen.findByRole('dialog', { name: 'Delete this question?' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Delete question' }));
+      dialog = await screen.findByRole('dialog', { name: 'Delete this question?' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Delete question' }));
+      expect(await screen.findByText('Question deleted')).toBeInTheDocument();
+      expect(calls.find((c) => c.method === 'DELETE')!.path).toBe('/api/questions/q1');
+      await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    });
+
+    it('a failed delete keeps the dialog open with the reason', async () => {
+      mockApi({
+        ...handlers(other),
+        ...asAdmin,
+        'DELETE /api/questions/q1': {
+          status: 404,
+          body: { error: { code: 'NOT_FOUND', message: 'Question not found' } },
+        },
+      });
+      renderApp('/questions/q1');
+      await userEvent.click(await screen.findByRole('button', { name: 'Delete question' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this question?' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Delete question' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Question not found');
+    });
   });
 });

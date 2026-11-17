@@ -106,11 +106,19 @@ describe('POST /questions: FR-01, FR-02, FR-15', () => {
     ]);
   });
 
-  it('reviewers can add too; read-only users get 403; anonymous gets 401', async () => {
-    expect(
-      (await post(world.users.reviewer, { text: 'Reviewer question about Kubernetes' })).status,
-    ).toBe(201);
-    expect((await post(world.users.plain, { text: 'Nope' })).status).toBe(403);
+  it('new questions start PENDING; authors and admins can add (reviewers and users get 403); anonymous gets 401', async () => {
+    const created = await post(world.users.authorA, { text: 'Author question about Kubernetes' });
+    expect(created.body.question).toMatchObject({ status: 'PENDING', review: null });
+    for (const u of [world.users.reviewer, world.users.plain]) {
+      expect((await post(u, { text: 'Nope' })).status).toBe(403);
+    }
+    // An admin's question needs no review: approved on the spot, by its creator.
+    const byAdmin = await post(world.users.admin, { text: 'Admin question about Terraform state' });
+    expect(byAdmin.status).toBe(201);
+    expect(byAdmin.body.question).toMatchObject({
+      status: 'APPROVED',
+      review: { reviewer: { id: world.users.admin.id } },
+    });
     expect((await request(ctx.app).post('/api/questions').send({ text: 'x' })).status).toBe(401);
   });
 
@@ -253,9 +261,15 @@ describe('duplicate detection: FR-12, FR-13, FR-14', () => {
   });
 
   it('IMP-04: a unique-looking submission matching only restricted text is stored without any 409 (no DB unique constraint)', async () => {
-    await post(world.users.authorA, { text: ACME_TEXT });
+    const first = await post(world.users.authorA, { text: ACME_TEXT });
+    // Still PENDING: another author cannot see it, so it is not flagged (nor leaked).
+    expect((await post(world.users.authorB, { text: ACME_TEXT })).status).toBe(201);
+    await db.question.update({
+      where: { id: first.body.question.id },
+      data: { status: 'APPROVED' },
+    });
     const again = await post(world.users.authorB, { text: ACME_TEXT });
-    expect(again.status).toBe(409); // now the first public copy exists and IS visible
+    expect(again.status).toBe(409); // the first public copy is now approved and IS visible
     expect(again.body.error.matches.every((m: { id: string }) => m.id !== acmeQ.id)).toBe(true);
   });
 });
@@ -266,10 +280,12 @@ describe('PATCH /questions/:id: AUTH-03 edit matrix (direct by ID)', () => {
     ['authorA', 'own', 200],
     ['authorA', 'other', 403],
     ['authorB', 'other', 403], // authorB wrote rateLimiter; edits authorA's closure question
-    ['reviewer', 'other', 200],
-    ['reviewer', 'acme', 200], // reviewer is granted Acme
-    ['reviewerNoGrant', 'other', 200],
+    ['reviewer', 'other', 403], // reviewers decide, they do not edit
+    ['reviewer', 'acme', 403],
+    ['reviewerNoGrant', 'other', 403],
     ['reviewerNoGrant', 'acme', 404], // not granted: invisible, so 404 not 403
+    ['admin', 'other', 200], // an admin edits anything, department grant or not
+    ['admin', 'acme', 200],
     ['plain', 'other', 403],
     ['plainAcme', 'acme', 403], // can see it, still read-only
     ['plain', 'acme', 404],
@@ -344,8 +360,8 @@ describe('PATCH /questions/:id: AUTH-03 edit matrix (direct by ID)', () => {
     expect(await counts()).toEqual(before);
   });
 
-  it('IMP-05: clientId cannot be changed or added by anyone, even a reviewer', async () => {
-    const res = await patch(world.users.reviewer, globalByA.id, { clientId: world.acme.id });
+  it('IMP-05: clientId cannot be changed or added by anyone, even the author', async () => {
+    const res = await patch(world.users.authorA, globalByA.id, { clientId: world.acme.id });
     expect(res.status).toBe(400);
     expect((await db.question.findUnique({ where: { id: globalByA.id } }))!.clientId).toBeNull();
   });
@@ -385,25 +401,32 @@ describe('edits and history: FR-15, AUD-01', () => {
     expect(auditLogs().filter((a) => a.type === 'QUESTION_UPDATED')).toHaveLength(1);
   });
 
-  it('a reviewer edit is attributed to the reviewer, not the author', async () => {
-    await patch(world.users.reviewerNoGrant, globalByA.id, { answerNotes: 'Reviewed.' });
-    const hist = await request(ctx.app)
-      .get(`/api/questions/${globalByA.id}/history`)
-      .set('Cookie', as(world.users.plain));
-    expect(hist.status).toBe(200);
-    expect(hist.body.items.map((i: { type: string }) => i.type)).toEqual(['QUESTION_UPDATED']);
-    expect(hist.body.items[0].actor).toMatchObject({
-      id: world.users.reviewerNoGrant.id,
-      name: 'reviewerNoGrant',
+  it('a real edit resubmits an approved question for review and drops the earlier decision', async () => {
+    await db.question.update({
+      where: { id: globalByA.id },
+      data: { reviewNote: 'Good.', reviewedById: world.users.reviewer.id, reviewedAt: new Date() },
     });
-    expect(hist.body.items[0].changes.answerNotes).toMatchObject({ to: 'Reviewed.' });
+    const edit = await patch(world.users.authorA, globalByA.id, { answerNotes: 'Reworked.' });
+    expect(edit.body.question).toMatchObject({ status: 'PENDING', review: null });
+    // A no-op edit leaves the decision alone.
+    const approved = await db.question.update({
+      where: { id: acmeQ.id },
+      data: { reviewNote: 'Ok', reviewedById: world.users.reviewer.id, reviewedAt: new Date() },
+    });
+    const noop = await patch(world.users.authorAcme, acmeQ.id, { text: approved.text });
+    expect(noop.body.question).toMatchObject({ status: 'APPROVED' });
+    expect(noop.body.question.review).toMatchObject({ note: 'Ok' });
   });
 
   it('history lists creation then edits in order, with actor and time', async () => {
     const created = await post(world.users.authorA, { text: 'A history test question about Go' });
     const id = created.body.question.id;
     await patch(world.users.authorA, id, { answerNotes: 'one' });
-    await patch(world.users.reviewer, id, { answerNotes: 'two' });
+    await request(ctx.app)
+      .post(`/api/questions/${id}/review`)
+      .set('Cookie', as(world.users.reviewer))
+      .send({ decision: 'APPROVED', note: 'Looks good' });
+    // Approved, so authorB can now read it and its history.
     const hist = await request(ctx.app)
       .get(`/api/questions/${id}/history`)
       .set('Cookie', as(world.users.authorB));
@@ -412,8 +435,9 @@ describe('edits and history: FR-15, AUD-01', () => {
     ).toEqual([
       ['QUESTION_CREATED', 'authorA'],
       ['QUESTION_UPDATED', 'authorA'],
-      ['QUESTION_UPDATED', 'reviewer'],
+      ['QUESTION_APPROVED', 'reviewer'],
     ]);
+    expect(hist.body.items[2].note).toBe('Looks good');
     for (const item of hist.body.items) expect(new Date(item.at).getTime()).not.toBeNaN();
   });
 
@@ -436,6 +460,10 @@ describe('edits and history: FR-15, AUD-01', () => {
       confirmNotDuplicate: true,
     });
     expect(forced.status).toBe(201);
+    await db.question.update({
+      where: { id: forced.body.question.id },
+      data: { status: 'APPROVED' },
+    });
     // Now a user with no Acme access reads the new question's history.
     const hist = await request(ctx.app)
       .get(`/api/questions/${forced.body.question.id}/history`)

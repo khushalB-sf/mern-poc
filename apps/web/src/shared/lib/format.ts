@@ -6,4 +6,15 @@ export const formatDateTime = (iso: string) => dateTime.format(new Date(iso));
 export const plural = (n: number, one: string, many = `${one}s`) =>
   `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
-export const ROLE_LABEL = { USER: 'Read-only', AUTHOR: 'Author', REVIEWER: 'Reviewer' } as const;
+export const ROLE_LABEL = {
+  USER: 'Read-only',
+  AUTHOR: 'Author',
+  REVIEWER: 'Reviewer',
+  ADMIN: 'Admin',
+} as const;
+
+export const STATUS_LABEL = {
+  PENDING: 'Pending review',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+} as const;

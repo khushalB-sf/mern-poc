@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
-import { plural } from '../../shared/lib/format';
+import { STATUS_LABEL, plural } from '../../shared/lib/format';
 import { Button, buttonClass } from '../../shared/ui/Button';
 import { Dialog } from '../../shared/ui/Dialog';
 import { Icon } from '../../shared/ui/Icon';
+import { Page, PageHeader } from '../../shared/ui/Page';
 import { cx } from '../../shared/ui/cx';
 import { EmptyState, ErrorState, ListSkeleton } from '../../shared/ui/states';
 import { canCreate, useMe } from '../auth/hooks';
@@ -78,6 +79,7 @@ export function QuestionListPage() {
       clients={clients.data}
       tagsError={tags.isError}
       onRetryTags={() => void tags.refetch()}
+      showStatus={me?.role !== 'USER'}
       filters={filters}
       onChange={(f) => setFilters(f)}
     />
@@ -97,22 +99,40 @@ export function QuestionListPage() {
       ? [
           {
             key: 'client',
-            label: `${clients.data?.find((c) => c.id === filters.clientId)?.name ?? 'Client'} only`,
+            label: `${clients.data?.find((c) => c.id === filters.clientId)?.name ?? 'Department'} only`,
             remove: () => setFilters({ ...filters, clientId: '', page: 1 }),
+          },
+        ]
+      : []),
+    ...(filters.status
+      ? [
+          {
+            key: 'status',
+            label: STATUS_LABEL[filters.status],
+            remove: () => setFilters({ ...filters, status: '', page: 1 }),
           },
         ]
       : []),
   ];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 ref={headingRef} tabIndex={-1} className="font-serif text-3xl font-semibold">
-          Questions
-        </h1>
-      </div>
+    <Page>
+      <PageHeader
+        title="Questions"
+        description="Search and filter your team's interview questions."
+        headingRef={headingRef}
+        actions={
+          me &&
+          canCreate(me) && (
+            <Link to="/questions/new" className={buttonClass('primary')}>
+              <Icon name="plus" />
+              Add question
+            </Link>
+          )
+        }
+      />
 
-      <form role="search" onSubmit={(e) => e.preventDefault()} className="mt-4 flex gap-2">
+      <form role="search" onSubmit={(e) => e.preventDefault()} className="flex gap-2">
         <div className="relative flex-1">
           <label htmlFor="q" className="sr-only">
             Search question text and answer notes
@@ -129,10 +149,10 @@ export function QuestionListPage() {
             placeholder="Search question text and answer notes"
             autoComplete="off"
             maxLength={200}
-            className="min-h-12 w-full rounded-md border border-control bg-surface pl-11 pr-3 text-base placeholder:text-ink-soft"
+            className="min-h-12 w-full rounded-xl border border-control bg-surface pl-11 pr-3 text-base shadow-sm transition-colors placeholder:text-ink-soft hover:border-ink-soft focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0"
           />
         </div>
-        <Button className="min-h-12 lg:hidden" onClick={() => setFiltersOpen(true)}>
+        <Button className="min-h-12 xl:hidden" onClick={() => setFiltersOpen(true)}>
           <Icon name="filter" />
           Filters
           {activeCount > 0 && (
@@ -144,15 +164,16 @@ export function QuestionListPage() {
         </Button>
       </form>
 
-      <div className="mt-6 grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside aria-label="Filters" className="hidden lg:block">
-          <div className="sticky top-6 max-h-[calc(100dvh-3rem)] overflow-y-auto p-1">{panel}</div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[16rem_minmax(0,1fr)]">
+        <aside aria-label="Filters" className="hidden xl:block">
+          <div className="sticky top-6 max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-sm">
+            {panel}
+          </div>
         </aside>
 
         <section aria-label="Results" aria-busy={search.isFetching} className="min-w-0">
-          {/* pl-5 lines this row up with the question text (4px edge + 16px padding on each row). */}
-          <div className="flex min-h-8 flex-wrap items-center gap-2 pl-5">
-            <p role="status" className="text-sm text-ink-soft">
+          <div className="flex min-h-8 flex-wrap items-center gap-2">
+            <p role="status" className="text-sm font-medium text-ink-soft">
               {search.isPending
                 ? 'Loading questions'
                 : hasAnyFilter(filters)
@@ -164,7 +185,7 @@ export function QuestionListPage() {
                 key={c.key}
                 type="button"
                 onClick={c.remove}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-sm hover:opacity-80"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-accent/30 bg-accent-soft px-3 text-sm font-medium text-accent hover:border-accent"
               >
                 {c.label}
                 <Icon name="x" className="size-3.5" />
@@ -182,7 +203,7 @@ export function QuestionListPage() {
             )}
           </div>
 
-          <div className={cx('mt-2 transition-opacity', refreshing && 'opacity-60')}>
+          <div className={cx('mt-3 transition-opacity', refreshing && 'opacity-60')}>
             {search.isPending ? (
               <ListSkeleton />
             ) : search.isError && !search.data ? (
@@ -209,7 +230,7 @@ export function QuestionListPage() {
                   : 'Questions your team adds will appear here.'}
               </EmptyState>
             ) : (
-              <ul className="divide-y divide-line">
+              <ul className="space-y-3">
                 {items.map((q) => (
                   <QuestionRow key={q.id} question={q} tagLabel={tagLabel} />
                 ))}
@@ -232,6 +253,6 @@ export function QuestionListPage() {
           </Button>
         </div>
       </Dialog>
-    </div>
+    </Page>
   );
 }

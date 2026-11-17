@@ -74,7 +74,11 @@ export async function buildWorld(db: Db) {
     db.client.create({ data: { name: 'Acme' } }),
     db.client.create({ data: { name: 'Globex' } }),
   ]);
-  const user = (key: string, role: 'USER' | 'AUTHOR' | 'REVIEWER', grants: string[] = []) =>
+  const user = (
+    key: string,
+    role: 'USER' | 'AUTHOR' | 'REVIEWER' | 'ADMIN',
+    grants: string[] = [],
+  ) =>
     db.appUser.create({
       data: {
         email: `${key.toLowerCase()}@test.dev`,
@@ -93,6 +97,7 @@ export async function buildWorld(db: Db) {
     authorGlobex: await user('authorGlobex', 'AUTHOR', [globex.id]),
     reviewer: await user('reviewer', 'REVIEWER', [acme.id]),
     reviewerNoGrant: await user('reviewerNoGrant', 'REVIEWER'),
+    admin: await user('admin', 'ADMIN'),
   };
 
   const tags = new Map<string, string>(); // "category:value" -> id
@@ -116,7 +121,15 @@ export type World = Awaited<ReturnType<typeof buildWorld>>;
 export async function addQuestion(
   db: Db,
   world: World,
-  q: { text: string; notes?: string; authorId: string; clientId?: string | null; tags?: string[] },
+  q: {
+    text: string;
+    notes?: string;
+    authorId: string;
+    clientId?: string | null;
+    tags?: string[];
+    /** Defaults to APPROVED so visibility tests are not silently filtered by the review workflow. */
+    status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  },
 ) {
   return db.question.create({
     data: {
@@ -124,6 +137,7 @@ export async function addQuestion(
       answerNotes: q.notes ?? '',
       authorId: q.authorId,
       clientId: q.clientId ?? null,
+      status: q.status ?? 'APPROVED',
       tags: { create: (q.tags ?? []).map((t) => ({ tagId: world.tags.get(t)! })) },
     },
   });
@@ -132,7 +146,7 @@ export async function addQuestion(
 const UUID = '11111111-1111-4111-8111-111111111111';
 
 /** Every route the app registers. A test fails if a route is added and not listed here (route sweep). */
-export const MANIFEST: [method: 'get' | 'post' | 'patch', path: string][] = [
+export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: string][] = [
   ['get', '/api/health'],
   ['get', '/api/openapi.json'],
   ['get', '/api/docs'],
@@ -148,4 +162,15 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch', path: string][] = [
   ['get', `/api/questions/${UUID}/history`],
   ['post', '/api/questions'],
   ['patch', `/api/questions/${UUID}`],
+  ['delete', `/api/questions/${UUID}`],
+  ['post', `/api/questions/${UUID}/review`],
+  ['get', '/api/admin/users'],
+  ['post', '/api/admin/users'],
+  ['patch', `/api/admin/users/${UUID}`],
+  ['delete', `/api/admin/users/${UUID}`],
+  ['put', `/api/admin/users/${UUID}/clients`],
+  ['get', '/api/admin/clients'],
+  ['post', '/api/admin/clients'],
+  ['patch', `/api/admin/clients/${UUID}`],
+  ['delete', `/api/admin/clients/${UUID}`],
 ];

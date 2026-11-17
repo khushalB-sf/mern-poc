@@ -36,7 +36,12 @@ export function useLogout() {
   });
 }
 
-/** Mirrors the server rule. The API enforces it; this only decides whether to show the control. */
-export const canCreate = (user: User) => user.role === 'AUTHOR' || user.role === 'REVIEWER';
+/** Mirror the server rules. The API enforces them; these only decide whether to show a control. */
+export const isAdmin = (user: User) => user.role === 'ADMIN';
+export const canCreate = (user: User) => user.role === 'AUTHOR' || isAdmin(user);
 export const canEdit = (user: User, q: Question) =>
-  user.role === 'REVIEWER' || (user.role === 'AUTHOR' && q.author.id === user.id);
+  isAdmin(user) || (user.role === 'AUTHOR' && q.author.id === user.id);
+/** Admins may (re)decide any question; reviewers only pending ones that are not their own. */
+export const canReview = (user: User, q: Question) =>
+  isAdmin(user) || (user.role === 'REVIEWER' && q.status === 'PENDING' && q.author.id !== user.id);
+export const canDelete = (user: User) => isAdmin(user);

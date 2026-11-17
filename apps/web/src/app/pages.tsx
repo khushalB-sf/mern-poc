@@ -1,4 +1,5 @@
 import { Link, isRouteErrorResponse, useRouteError } from 'react-router';
+import { Page } from '../shared/ui/Page';
 import { useDocumentTitle } from '../shared/hooks/useDocumentTitle';
 import { buttonClass } from '../shared/ui/Button';
 import { EmptyState, ErrorState } from '../shared/ui/states';
@@ -6,7 +7,7 @@ import { EmptyState, ErrorState } from '../shared/ui/states';
 export function NotFoundPage() {
   useDocumentTitle('Page not found');
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <Page width="md">
       <EmptyState
         title="That page doesn't exist"
         action={
@@ -17,7 +18,7 @@ export function NotFoundPage() {
       >
         Check the address, or head back to the question list.
       </EmptyState>
-    </div>
+    </Page>
   );
 }
 
@@ -27,17 +28,17 @@ export function RouteError() {
   useDocumentTitle('Something went wrong');
   console.error(error);
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <Page width="md">
       <ErrorState title="Something went wrong">
         {isRouteErrorResponse(error)
           ? `${error.status} ${error.statusText}`
           : 'An unexpected error stopped this page from loading.'}
       </ErrorState>
-      <p className="text-center">
+      <p className="mt-4 text-center">
         <a href="/" className={buttonClass('secondary')}>
           Reload the app
         </a>
       </p>
-    </div>
+    </Page>
   );
 }

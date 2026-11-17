@@ -9,6 +9,9 @@ import {
   findSimilarQuestions,
   getVisibleQuestion,
   insertQuestion,
+  lockQuestion,
+  setReviewDecision,
+  softDeleteQuestion,
   updateQuestionRow,
   type QuestionView,
 } from './question.repo.js';
@@ -37,11 +40,16 @@ export async function createQuestion(
   input: CreateInput,
 ): Promise<QuestionView> {
   if (input.clientId) {
-    // Ungranted looks exactly like nonexistent: no client-existence oracle.
-    const grant = await db.clientGrant.findUnique({
-      where: { userId_clientId: { userId: actor.id, clientId: input.clientId } },
+    // Ungranted (or deleted) looks exactly like nonexistent: no client-existence oracle. Admins need no grant.
+    const client = await db.client.findFirst({
+      where: {
+        id: input.clientId,
+        deletedAt: null,
+        ...(actor.role === 'ADMIN' ? {} : { grants: { some: { userId: actor.id } } }),
+      },
+      select: { id: true },
     });
-    if (!grant) throw notFound('Client not found');
+    if (!client) throw notFound('Client not found');
   }
   const tagIds = await resolveTagIds(db, input.tags);
 
@@ -66,6 +74,7 @@ export async function createQuestion(
       authorId: actor.id,
       clientId: input.clientId ?? null,
       tagIds,
+      approvedBy: actor.role === 'ADMIN' ? actor.id : undefined, // an admin's question needs no review
     });
     if (matches.length > 0) {
       await recordAudit(tx, log, {
@@ -96,14 +105,14 @@ export async function updateQuestion(
   patch: PatchInput,
 ): Promise<QuestionView> {
   return db.$transaction(async (tx) => {
+    await lockQuestion(tx, id);
     // 1. Visibility first: a question the actor cannot see is a plain 404, never a 403.
     const current = await getVisibleQuestion(tx, actor, id);
     if (!current) throw notFound('Question not found');
 
-    // 2. Then role: reviewers edit anything visible, authors only their own, everyone else is read-only.
-    const allowed =
-      actor.role === 'REVIEWER' || (actor.role === 'AUTHOR' && current.author.id === actor.id);
-    if (!allowed) throw forbidden();
+    // 2. Then role: an admin edits anything; an author edits their own; everyone else (reviewers included) is read-only.
+    const isAdmin = actor.role === 'ADMIN';
+    if (!isAdmin && (actor.role !== 'AUTHOR' || current.author.id !== actor.id)) throw forbidden();
 
     const changes: Record<string, { from: InputJsonValue; to: InputJsonValue }> = {};
     if (patch.text !== undefined && patch.text !== current.text) {
@@ -126,6 +135,7 @@ export async function updateQuestion(
       text: patch.text,
       answerNotes: patch.answerNotes,
       tagIds: changes.tags ? tagIds : undefined,
+      resubmit: !isAdmin,
     });
     await recordAudit(tx, log, {
       type: 'QUESTION_UPDATED',
@@ -134,6 +144,70 @@ export async function updateQuestion(
       payload: { changes },
     });
     return (await getVisibleQuestion(tx, actor, id))!;
+  });
+}
+
+export interface ReviewInput {
+  decision: 'APPROVED' | 'REJECTED';
+  note: string;
+}
+
+/**
+ * Reviewer decision on a PENDING question; an admin may also overturn an earlier decision.
+ * Same order as edits: visibility (404), role (403), state (409).
+ */
+export async function reviewQuestion(
+  db: Db,
+  log: Logger,
+  actor: AuthUser,
+  id: string,
+  input: ReviewInput,
+): Promise<QuestionView> {
+  return db.$transaction(async (tx) => {
+    await lockQuestion(tx, id); // two reviewers deciding at once: the second sees the first's result
+    const current = await getVisibleQuestion(tx, actor, id);
+    if (!current) throw notFound('Question not found');
+    const isAdmin = actor.role === 'ADMIN';
+    if (!isAdmin && actor.role !== 'REVIEWER') throw forbidden();
+    // A role can change after a question was written, so "reviewer" does not rule out "author".
+    if (!isAdmin && current.author.id === actor.id) {
+      throw forbidden('You cannot review your own question');
+    }
+    if (!isAdmin && current.status !== 'PENDING') {
+      throw new AppError(409, 'NOT_PENDING', 'This question has already been reviewed');
+    }
+
+    const note = input.note || null;
+    await setReviewDecision(tx, id, {
+      status: input.decision,
+      note,
+      reviewerId: actor.id,
+      updatedAt: current.updatedAt,
+    });
+    await recordAudit(tx, log, {
+      type: input.decision === 'APPROVED' ? 'QUESTION_APPROVED' : 'QUESTION_REJECTED',
+      actorId: actor.id,
+      questionId: id,
+      payload: { note },
+    });
+    return (await getVisibleQuestion(tx, actor, id))!;
+  });
+}
+
+/** Admin only. Soft delete: the question vanishes from every list and lookup, its history is kept. */
+export async function deleteQuestion(db: Db, log: Logger, actor: AuthUser, id: string) {
+  await db.$transaction(async (tx) => {
+    await lockQuestion(tx, id);
+    const current = await getVisibleQuestion(tx, actor, id);
+    if (!current) throw notFound('Question not found');
+    if (actor.role !== 'ADMIN') throw forbidden();
+    await softDeleteQuestion(tx, id);
+    await recordAudit(tx, log, {
+      type: 'QUESTION_DELETED',
+      actorId: actor.id,
+      questionId: id,
+      payload: { text: current.text },
+    });
   });
 }
 

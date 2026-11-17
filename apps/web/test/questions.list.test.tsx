@@ -24,7 +24,7 @@ describe('question list', () => {
 
     const row = screen.getByRole('link', { name: 'How does Acme ship?' }).closest('li')!;
     expect(within(row).getByText('Acme only')).toBeInTheDocument();
-    expect(within(row).getByText(/Restricted to client/)).toBeInTheDocument(); // not colour-only
+    expect(within(row).getByText(/Restricted to department/)).toBeInTheDocument(); // not colour-only
     expect(within(row).getByText('React')).toBeInTheDocument(); // label, not the raw value "react"
   });
 

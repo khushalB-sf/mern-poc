@@ -1,25 +1,48 @@
-import { DEMO_ACCOUNTS } from '../auth/demoAccounts';
+import { DEMO_ACCOUNTS, DEMO_CLIENTS, type DemoClient } from '../auth/demoAccounts';
 import type { FlowStep } from './Flow';
 import { Code } from './Flow';
 import type { MindMapData } from './MindMap';
 
 // Every statement here describes apps/api: keep it in step with the code it names.
 
-export const ROLE_COLUMNS = ['Read-only', 'Author', 'Reviewer'] as const;
+export const ROLE_COLUMNS = ['Read-only', 'Author', 'Reviewer', 'Admin'] as const;
+
+type RoleCells = [string, string, string, string];
 
 /** A cell of "yes" or "no" renders as a tick or a dash; any other string is shown as written. */
-export const ROLE_ROWS: { action: string; cells: [string, string, string] }[] = [
-  { action: 'List, search and open the questions you can see', cells: ['yes', 'yes', 'yes'] },
-  { action: 'Read a question’s edit history', cells: ['yes', 'yes', 'yes'] },
-  { action: 'Create a global question', cells: ['no', 'yes', 'yes'] },
+export const ROLE_ROWS: { action: string; cells: RoleCells }[] = [
   {
-    action: 'Create a question for a client',
-    cells: ['no', 'Needs that grant', 'Needs that grant'],
+    action: 'List, search and open approved questions you can see',
+    cells: ['yes', 'yes', 'yes', 'yes'],
   },
-  { action: 'Edit a question you wrote', cells: ['no', 'yes', 'yes'] },
-  { action: 'Edit someone else’s question', cells: ['no', 'no', 'Any you can see'] },
-  { action: 'Move a question to another client', cells: ['no', 'no', 'no'] },
-  { action: 'Delete a question', cells: ['no', 'no', 'no'] },
+  {
+    action: 'See questions that are pending or rejected',
+    cells: ['no', 'Your own', 'yes', 'yes'],
+  },
+  { action: 'Read a question’s history', cells: ['yes', 'yes', 'yes', 'yes'] },
+  { action: 'Create a global question', cells: ['no', 'yes', 'no', 'Live at once'] },
+  {
+    action: 'Create a question for a department',
+    cells: ['no', 'Needs that grant', 'no', 'Any department'],
+  },
+  {
+    action: 'Edit a question you wrote (an Author’s edit goes back for review)',
+    cells: ['no', 'yes', 'no', 'yes'],
+  },
+  { action: 'Edit someone else’s question', cells: ['no', 'no', 'no', 'Any'] },
+  {
+    action: 'Approve or reject a question, with a note',
+    cells: ['no', 'no', 'Pending, not your own', 'Any, any time'],
+  },
+  {
+    action: 'See every department’s questions, without a grant',
+    cells: ['no', 'no', 'no', 'yes'],
+  },
+  { action: 'Change a user’s role or department access', cells: ['no', 'no', 'no', 'yes'] },
+  { action: 'Add, edit or delete users, including reviewers', cells: ['no', 'no', 'no', 'yes'] },
+  { action: 'Add, edit or delete a department', cells: ['no', 'no', 'no', 'yes'] },
+  { action: 'Move a question to another department', cells: ['no', 'no', 'no', 'no'] },
+  { action: 'Delete a question (hidden, history kept)', cells: ['no', 'no', 'no', 'yes'] },
 ];
 
 export const DECISION_STEPS: FlowStep[] = [
@@ -37,8 +60,9 @@ export const DECISION_STEPS: FlowStep[] = [
     title: 'Can you see this question?',
     detail: (
       <>
-        Yes if it is global (no client), or you hold a grant for its client. This is checked first,
-        for every role, Reviewers included.
+        Yes if its status lets your role read it (read-only: approved only, Authors: approved plus
+        their own, Reviewers: any) and it is global or you hold a grant for its department. Admins
+        see everything. This is checked first, so it comes before the role check.
       </>
     ),
     fail: '404 NOT_FOUND (same as an ID that does not exist)',
@@ -47,8 +71,9 @@ export const DECISION_STEPS: FlowStep[] = [
     title: 'Does your role allow the action?',
     detail: (
       <>
-        Read-only accounts cannot write. Creating needs Author or Reviewer. Editing needs Reviewer,
-        or Author on a question you wrote.
+        Read-only accounts cannot write. Creating needs Author or Admin. Editing needs Author on a
+        question you wrote, or Admin. Approving or rejecting needs Reviewer, on a pending question
+        that is not yours, or Admin. Deleting a question needs Admin.
       </>
     ),
     fail: '403 FORBIDDEN',
@@ -129,9 +154,9 @@ export const PIPELINE: FlowStep[] = [
     title: 'requireRole (create only)',
     detail: (
       <>
-        <Code>POST /questions</Code> allows Author and Reviewer and runs before validation. Edits
-        have no role middleware: their role check sits inside the service, after the visibility
-        lookup.
+        <Code>POST /questions</Code> allows Author and Admin and runs before validation. Edits and
+        reviews have no role middleware: their role check sits inside the service, after the
+        visibility lookup. <Code>/admin/*</Code> is gated to Admin for the whole router.
       </>
     ),
     fail: '403 FORBIDDEN',
@@ -270,8 +295,8 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Role gate, then validation',
         detail: (
           <>
-            Author or Reviewer only. Body: text 1 to 1000 characters, notes up to 10,000, at most 30
-            tags, optional <Code>clientId</Code>, optional <Code>confirmNotDuplicate</Code>.
+            Author or Admin. Body: text 1 to 1000 characters, notes up to 10,000, at most 30 tags,
+            optional <Code>clientId</Code>, optional <Code>confirmNotDuplicate</Code>.
           </>
         ),
         fail: '403 FORBIDDEN · 400 VALIDATION_ERROR',
@@ -344,8 +369,9 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Check the role',
         detail: (
           <>
-            Allowed if you are a Reviewer, or an Author and the author of this question. A read-only
-            user, or an Author on someone else’s question, stops here.
+            Allowed if you are an Author and the author of this question, or an Admin. Everyone
+            else, Reviewers included, stops here. An Author’s edit sends the question back to
+            review; an Admin’s does not.
           </>
         ),
         fail: '403 FORBIDDEN',
@@ -380,22 +406,24 @@ export const OPERATIONS: OperationFlow[] = [
 export const TABLES: { name: string; purpose: string; keys: string }[] = [
   {
     name: 'app_user',
-    purpose: 'Accounts. One global role: USER, AUTHOR or REVIEWER.',
+    purpose: 'Accounts. One global role: USER, AUTHOR, REVIEWER or ADMIN.',
     keys: 'email unique · active flag',
   },
   {
     name: 'client',
-    purpose: 'The clients that can own restricted questions (Acme Corp, Globex).',
+    purpose:
+      'The departments that can own restricted questions (MERN, MEAN, Python, AI-ML, Data Engineering, DevOps).',
     keys: 'name unique',
   },
   {
     name: 'client_grant',
-    purpose: 'A row means this user may see that client’s questions.',
+    purpose: 'A row means this user may see that department’s questions.',
     keys: 'PK (user_id, client_id): the visibility check is a primary-key lookup',
   },
   {
     name: 'question',
-    purpose: 'Text, answer notes, author, and an optional client. A null client means global.',
+    purpose:
+      'Text, answer notes, author, optional department, review status and the reviewer’s note.',
     keys: 'client_id set at creation, never changed · no unique on text · full-text and trigram indexes',
   },
   {
@@ -484,7 +512,7 @@ export const TRACES: { who: string; request: string; path: string; result: strin
   },
   {
     who: 'Carol (no grants)',
-    request: 'GET an Acme question by id',
+    request: 'GET a MERN question by id',
     path: 'The visibility check finds no row, exactly as for an id that does not exist.',
     result: '404',
   },
@@ -495,15 +523,21 @@ export const TRACES: { who: string; request: string; path: string; result: strin
     result: '403',
   },
   {
-    who: 'Rita (Reviewer, both clients)',
-    request: 'PATCH a Globex question',
-    path: 'Visible through her Globex grant, and a Reviewer may edit any visible question.',
+    who: 'Rita (Reviewer, all departments)',
+    request: 'POST a review of a pending AI-ML question',
+    path: 'Visible through her AI-ML grant. A pending question can be reviewed by a Reviewer who is not its author.',
     result: '200',
+  },
+  {
+    who: 'Rita (Reviewer, all departments)',
+    request: 'PATCH a question to edit it',
+    path: 'Visibility passes, then the role check finds only the question’s author, or an Admin, may edit. Reviewers decide, they do not edit.',
+    result: '403',
   },
 ];
 
 const short = (email: string) => email.replace('@example.com', '@');
-const holders = (client: 'Acme' | 'Globex') =>
+const holders = (client: DemoClient) =>
   DEMO_ACCOUNTS.filter((a) => a.grants.includes(client)).map((a) => ({ text: short(a.email) }));
 
 /** One mind map per tab. The grants map is built from the demo accounts, so it cannot drift from them. */
@@ -553,22 +587,33 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         title: 'Author',
         leaves: [
           { text: 'Create global questions' },
-          { text: 'Create for a client you hold a grant for' },
-          { text: 'Edit only questions you wrote' },
+          { text: 'Create for a department you hold a grant for' },
+          { text: 'Edit only questions you wrote (resubmits)' },
         ],
       },
       {
         title: 'Reviewer',
         leaves: [
-          { text: 'Everything an Author can do' },
-          { text: 'Edit any question you can see' },
+          { text: 'See every status in your departments' },
+          { text: 'Approve or reject with a note' },
           { text: 'No grant, no access' },
+        ],
+      },
+      {
+        title: 'Admin',
+        leaves: [
+          { text: 'See, add, edit and delete any question' },
+          { text: 'Add, edit and delete users and reviewers' },
+          { text: 'Add, edit and delete departments' },
         ],
       },
       {
         title: 'Not possible for anyone',
         tone: 'danger',
-        leaves: [{ text: 'Delete a question' }, { text: 'Move a question to another client' }],
+        leaves: [
+          { text: 'Move a question to another department' },
+          { text: 'Erase history (deletes only hide)' },
+        ],
       },
     ],
   },
@@ -582,8 +627,11 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Questions with no client' },
         ],
       },
-      { title: 'Acme', tone: 'restricted', leaves: holders('Acme') },
-      { title: 'Globex', tone: 'restricted', leaves: holders('Globex') },
+      ...DEMO_CLIENTS.map((c) => ({
+        title: c,
+        tone: 'restricted' as const,
+        leaves: holders(c),
+      })),
       {
         title: 'No grants',
         leaves: [
@@ -656,8 +704,10 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       {
         title: '3. Does your role allow it?',
         leaves: [
-          { text: 'Create: Author or Reviewer' },
-          { text: 'Edit: Reviewer, or your own as Author' },
+          { text: 'Create: Author or Admin' },
+          { text: 'Edit: your own as Author, any as Admin' },
+          { text: 'Review: Reviewer (pending), Admin (any)' },
+          { text: 'Delete: Admin' },
           { text: 'Otherwise: 403', tone: 'danger' },
         ],
       },

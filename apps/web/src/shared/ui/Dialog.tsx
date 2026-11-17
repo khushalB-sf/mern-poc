@@ -34,7 +34,7 @@ export function Dialog({ open, onClose, title, children, size = 'md' }: DialogPr
       // A click on the dialog element itself (not its content) is a click on the backdrop.
       onClick={(e) => e.target === e.currentTarget && onClose()}
       className={cx(
-        'm-auto w-[calc(100%-2rem)] rounded-lg border border-line bg-surface p-0 text-ink',
+        'm-auto w-[calc(100%-2rem)] rounded-2xl border border-line bg-surface p-0 text-ink shadow-2xl',
         size === 'lg' ? 'max-w-3xl' : 'max-w-lg',
         'max-h-[calc(100dvh-2rem)] overflow-y-auto',
       )}
@@ -48,7 +48,7 @@ export function Dialog({ open, onClose, title, children, size = 'md' }: DialogPr
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-m-2 rounded-md p-2 text-ink-soft hover:bg-accent-soft hover:text-ink"
+            className="-m-2 rounded-lg p-2 text-ink-soft hover:bg-surface-2 hover:text-ink"
           >
             <Icon name="x" />
           </button>

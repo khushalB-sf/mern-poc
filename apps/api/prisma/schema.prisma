@@ -11,6 +11,13 @@ enum Role {
   USER
   AUTHOR
   REVIEWER
+  ADMIN
+}
+
+enum QuestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum AuditType {
@@ -18,6 +25,17 @@ enum AuditType {
   QUESTION_UPDATED
   DUPLICATE_REJECTED
   DUPLICATE_OVERRIDDEN
+  QUESTION_APPROVED
+  QUESTION_REJECTED
+  QUESTION_DELETED
+  USER_ROLE_CHANGED
+  USER_CLIENTS_CHANGED
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  CLIENT_DELETED
 }
 
 model AppUser {
@@ -27,8 +45,11 @@ model AppUser {
   passwordHash  String         @map("password_hash")
   role          Role           @default(USER)
   active        Boolean        @default(true)
+  // Soft delete: the row stays so authored questions and the audit trail keep their author.
+  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz()
   grants        ClientGrant[]
-  questions     Question[]
+  questions     Question[]     @relation("QuestionAuthor")
+  reviewed      Question[]     @relation("QuestionReviewer")
   auditEvents   AuditEvent[]
   refreshTokens RefreshToken[]
 
@@ -36,10 +57,13 @@ model AppUser {
 }
 
 model Client {
-  id        String        @id @default(uuid()) @db.Uuid
-  name      String        @unique
-  grants    ClientGrant[]
-  questions Question[]
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique
+  description String?
+  // Soft delete: hides the department and its questions; history and grants stay.
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz()
+  grants      ClientGrant[]
+  questions   Question[]
 
   @@map("client")
 }
@@ -77,23 +101,32 @@ model Tag {
 }
 
 model Question {
-  id          String        @id @default(uuid()) @db.Uuid
-  text        String
-  answerNotes String        @default("") @map("answer_notes")
-  authorId    String        @map("author_id") @db.Uuid
+  id           String         @id @default(uuid()) @db.Uuid
+  text         String
+  answerNotes  String         @default("") @map("answer_notes")
+  authorId     String         @map("author_id") @db.Uuid
   // Set at creation only; immutable afterwards (IMP-05).
-  clientId    String?       @map("client_id") @db.Uuid
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
-  author      AppUser       @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  client      Client?       @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  tags        QuestionTag[]
-  auditEvents AuditEvent[]
+  clientId     String?        @map("client_id") @db.Uuid
+  // New and edited questions start PENDING; only a reviewer moves them to APPROVED or REJECTED.
+  status       QuestionStatus @default(PENDING)
+  reviewNote   String?        @map("review_note")
+  reviewedById String?        @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?      @map("reviewed_at") @db.Timestamptz()
+  // Soft delete (admin only): the row and its history stay, every read path excludes it.
+  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz()
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  author       AppUser        @relation("QuestionAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  reviewedBy   AppUser?       @relation("QuestionReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  client       Client?        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tags         QuestionTag[]
+  auditEvents  AuditEvent[]
 
   // No unique on text: a UNIQUE violation would leak restricted questions (IMP-04).
   // GIN expression indexes (full-text, trigram) and the non-blank CHECK are in the migration SQL.
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@index([clientId])
+  @@index([status])
   @@map("question")
 }
 

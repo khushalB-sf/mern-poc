@@ -117,18 +117,18 @@ Note: NFR-01 will already produce a basic query plan. O-02 is nearly free if the
 
 | # | Issue | Type | Default assumption (override if you disagree) |
 |---|---|---|---|
-| A1 | §1 says "**anyone** can add a question"; §2 says only Authors add and Users are read-only | **Contradiction** | §2/§3.5 govern: only `AUTHOR` and `REVIEWER` can create. `USER` cannot. |
-| A2 | §2 lists Reviewer as edit-any + read; never says Reviewers can add | Gap | Reviewers can also add (superset of Author). |
+| A1 | §1 says "**anyone** can add a question"; §2 says only Authors add and Users are read-only | **Contradiction** | §2/§3.5 govern: only `AUTHOR` can create (**revised, see §9**: Reviewers no longer create). `USER` cannot. |
+| A2 | §2 lists Reviewer as edit-any + read; never says Reviewers can add | Gap | **Superseded by §9:** Reviewers approve or reject with a note; they neither add nor edit. |
 | A3 | Your prompt says MERN; the brief fixes PostgreSQL + Prisma | Tension | The brief wins. I still run the SQL vs NoSQL comparison in Stage 2 for the walkthrough, but the outcome is predetermined. |
 | A4 | Express vs Next.js is left open | Open choice | **Decided: Express 5** (D1). |
 | A5 | No UI required by the brief | Gap | **Decided: minimal React UI** after the API and tests were green (D2); built. |
 | A6 | No authentication mechanism specified | Gap | Seeded users, email + password (Argon2id), short-lived JWT access token plus rotating refresh token, both in httpOnly cookies (D3, ADR-006). No self-registration. |
 | A7 | Roles global or per-client? | Gap | One global role per user (`USER`/`AUTHOR`/`REVIEWER`); client grants are a separate table. |
-| A8 | Do Reviewers bypass client grants? | Ambiguity | **No bypass** (IMP-03). Safer reading of "permitted to see". |
+| A8 | Do Reviewers bypass client grants? | Ambiguity | **No bypass** (IMP-03). Safer reading of "permitted to see". Only the new `ADMIN` role bypasses (§9). |
 | A9 | "Closely duplicates" undefined (§3.6) | Deliberate gap | Trigram similarity on normalized text with a threshold, see §6. Tuned against seed data. |
 | A10 | False-positive behaviour undefined | Deliberate gap | Resubmit with `confirmNotDuplicate: true`; recorded in audit. |
 | A11 | "Keyword" semantics undefined | Gap | Postgres full-text search (English stemming), AND of terms across question text + answer notes. Not substring match. |
-| A12 | Who creates tags/clients/grants? | Gap | Seeded only. No admin endpoints in POC. |
+| A12 | Who creates tags/clients/grants? | Gap | Tags are seeded. **Revised, see §9:** an `ADMIN` adds departments (clients), grants them to users and changes roles. |
 | A13 | Delete not mentioned | Gap | No delete. History would need soft-delete semantics; not worth it. |
 | A14 | "Several thousand" has no number | Gap | Seed 5,000 for tests; 10,000 for the optional load test. |
 | A15 | Timing side-channels (restricted queries slower/faster) | Known limit | Out of scope; documented as an accepted limitation. Response *content* indistinguishability is what is tested. |
@@ -271,3 +271,14 @@ Git (planned): trunk-based, short-lived `feat/*` branches, squash-merge, one PR 
 6. **Optional extras.** Include a second client in the seed from day one (cheap, gives O-02)? Include Postgres RLS (R-05)?
 
 Anything you do not answer, I will proceed with the stated default and record it in the assumptions register.
+
+## 9. Revision: roles and review workflow (from the RM's review)
+
+| Role | Can |
+|---|---|
+| `USER` | Read approved questions they have department access to. |
+| `AUTHOR` | Add questions and edit their own. Every new or edited question becomes `PENDING`. Sees approved questions plus their own at any status. |
+| `REVIEWER` | See every status within their departments; approve or reject a `PENDING` question with a note (note required to reject). Cannot add or edit, or review their own question. |
+| `ADMIN` | Everything. Users: add (with an initial password), edit name/email/role/active, reset a password, set department access, delete. Departments: add, edit name and description, delete. Questions: see all (bypasses department grants), add (approved at once), edit any (status unchanged), approve/reject or overturn any, delete. Cannot change, deactivate or delete themselves (no lock-out). |
+
+Decisions: department = the existing *client* concept (UI says department; API and column names keep `client`). Editing an approved question sends it back to `PENDING` and clears the earlier decision (it stays in the history). Visibility is one SQL predicate in `question.repo.ts` (role and status as well as grants), so search, counts, by-id reads, history and duplicate matching all obey it. **Deletes are soft** for users, departments and questions (`deleted_at`): the record vanishes from every list and lookup (a deleted department takes its questions with it, even for admins), sign-in stops and sessions are revoked, history and authorship stay valid. Emails and department names of deleted records stay reserved. Admin question edits do not resubmit for review; moving a question to another department stays impossible (IMP-05). Known limits: a duplicate check cannot see other authors' pending questions (widening it would leak); a reviewer's note on an approved question is readable by anyone who can read that question; the admin user list is unpaged.

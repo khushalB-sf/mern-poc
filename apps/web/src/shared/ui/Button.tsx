@@ -5,10 +5,10 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'md' | 'sm';
 
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-ink hover:bg-accent-hover border-transparent',
-  secondary: 'bg-surface text-ink border-control hover:bg-accent-soft',
-  ghost: 'bg-transparent text-ink border-transparent hover:bg-accent-soft',
-  danger: 'bg-danger text-white border-transparent hover:opacity-90',
+  primary: 'bg-accent text-accent-ink hover:bg-accent-hover border-transparent shadow-sm',
+  secondary: 'bg-surface text-ink border-line shadow-sm hover:border-control hover:bg-surface-2',
+  ghost: 'bg-transparent text-ink border-transparent hover:bg-surface-2',
+  danger: 'bg-danger text-white border-transparent shadow-sm hover:opacity-90',
 };
 const SIZE: Record<Size, string> = {
   md: 'min-h-11 px-4 text-sm',
@@ -18,7 +18,7 @@ const SIZE: Record<Size, string> = {
 /** Class string so links can look like buttons without nesting a <button> inside an <a>. */
 export const buttonClass = (variant: Variant = 'secondary', size: Size = 'md') =>
   cx(
-    'inline-flex items-center justify-center gap-2 rounded-md border font-medium transition-colors',
+    'inline-flex items-center justify-center gap-2 rounded-lg border font-medium transition-[color,background-color,border-color,box-shadow] active:translate-y-px',
     'disabled:cursor-not-allowed disabled:opacity-60',
     VARIANT[variant],
     SIZE[size],

@@ -1,6 +1,6 @@
 # Interview Question Bank
 
-A shared, searchable bank of interview questions. Everything requires signing in (there is no anonymous access). Signed-in users can browse and search; authors add questions with answer notes and tags and edit their own; reviewers can edit any entry they can see; plain users are read-only. Questions tied to a client are visible **only** to people granted that client, and that rule is enforced inside the database query, so a search never hints that a restricted question exists.
+A shared, searchable bank of interview questions. Everything requires signing in (there is no anonymous access). Signed-in users can browse and search; authors add questions with answer notes and tags and edit their own (every new or edited question goes to review); reviewers approve or reject pending questions with a note; plain users are read-only and see approved questions only; admins can do everything: add, edit and delete users (reviewers included), departments (with a description) and any question. Deletes are soft: the record disappears from the app and its history is kept. Questions tied to a department (called a _client_ in the API and code) are visible **only** to people granted it (admins excepted), and that rule is enforced inside the database query, so a search never hints that a restricted question exists.
 
 **Stack:** React 19 + Vite + Tailwind (UI) · Express 5 + TypeScript (API) · PostgreSQL 17 + Prisma 7 · Docker Compose · Vitest
 
@@ -11,25 +11,29 @@ cp .env.example .env                 # defaults work as-is for local use
 docker compose up -d --build         # database + API + web
 ```
 
-Open **http://localhost:3000** and sign in. The first start migrates the database and seeds about 5,000 questions.
+Open **http://localhost:3000** and sign in. The first start migrates the database and seeds about 1,500 questions.
 
-| Account                     | Role                                    |
-| --------------------------- | --------------------------------------- |
-| `author.acme@example.com`   | Author, has access to the Acme client   |
-| `author.globex@example.com` | Author, has access to the Globex client |
-| `author.both@example.com`   | Author, has access to Acme and Globex   |
-| `author.none@example.com`   | Author, no client access                |
-| `reviewer@example.com`      | Reviewer, has access to the Acme client |
-| `reviewer.both@example.com` | Reviewer, has access to Acme and Globex |
-| `user.acme@example.com`     | Read-only user, has access to Acme      |
-| `user.globex@example.com`   | Read-only user, has access to Globex    |
-| `user@example.com`          | Read-only user                          |
+| Account                     | Role                                                     |
+| --------------------------- | -------------------------------------------------------- |
+| `admin@example.com`         | Admin, sees all questions, manages users and departments |
+| `author.mern@example.com`   | Author in MERN and MEAN                                  |
+| `author.python@example.com` | Author in Python and AI-ML                               |
+| `author.data@example.com`   | Author in Data Engineering and DevOps                    |
+| `author.all@example.com`    | Author in every department                               |
+| `author.none@example.com`   | Author, no department access                             |
+| `reviewer.web@example.com`  | Reviewer for MERN and MEAN                               |
+| `reviewer.all@example.com`  | Reviewer for every department                            |
+| `user.mern@example.com`     | Read-only user in MERN                                   |
+| `user.python@example.com`   | Read-only user in Python                                 |
+| `user@example.com`          | Read-only user, no department access                     |
+
+Departments: MERN, MEAN, Python, AI-ML, Data Engineering, DevOps. Each department's questions use only its own technologies (a MERN question never mentions Spark); about 15% of questions are global (behavioural and general engineering) and visible to everyone.
 
 Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These are demo accounts for local use only.
 
 The login page has a **Demo accounts** panel that fills in both the email **and the password** with one click. That password is compiled into the web bundle, so the panel is for local demos only: set `VITE_SHOW_DEMO_ACCOUNTS=false` for anything shared. The panel always uses the default `Passw0rd!demo`; if you change `SEED_PASSWORD`, the one-click fill will no longer log in (type the password instead). The `VITE_DEMO_PASSWORD` override that the code reads is not passed through `compose.yaml` or the web Dockerfile.
 
-Try the main guarantee: search `zebrafish` as `author.none@example.com` (no results, indistinguishable from a search that matches nothing), then as `author.acme@example.com` (one Acme-only question).
+Try the main guarantee: search `zebrafish` as `author.none@example.com` (no results, indistinguishable from a search that matches nothing), then as `author.mern@example.com` (one MERN-only question).
 
 ## Three ways to run it
 

@@ -30,13 +30,15 @@ interface Props {
   defaultValues: FormValues;
   categories: TagCategory[];
   clients: Client[];
-  /** In edit mode the client is fixed; show it instead of a picker. */
+  /** In edit mode the department is fixed; show it instead of a picker. */
   lockedClientName?: string | null | undefined;
   submitting: boolean;
   formError?: string | undefined;
   /** Field errors reported by the server, keyed by form field. */
   serverErrors?: Partial<Record<keyof FormValues, string>> | undefined;
   cancelTo: string;
+  /** Admin changes go live at once; everyone else's go to review. Only affects the button wording. */
+  goesLive?: boolean;
   onSubmit: (values: FormValues) => void;
 }
 
@@ -50,6 +52,7 @@ export function QuestionForm({
   formError,
   serverErrors,
   cancelTo,
+  goesLive = false,
   onSubmit,
 }: Props) {
   const {
@@ -71,11 +74,15 @@ export function QuestionForm({
   const notesLength = watch('answerNotes').length;
 
   return (
-    <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-7">
+    <form
+      noValidate
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-6 rounded-xl border border-line bg-surface p-5 shadow-sm sm:p-7"
+    >
       {formError && (
         <p
           role="alert"
-          className="rounded-md border border-danger bg-danger-bg px-3 py-2.5 text-sm font-medium text-danger"
+          className="rounded-lg border border-danger bg-danger-bg px-3 py-2.5 text-sm font-medium text-danger"
         >
           {formError}
         </p>
@@ -130,7 +137,7 @@ export function QuestionForm({
         ? clients.length > 0 && (
             <SelectField
               label="Who can see this question?"
-              hint="Questions for a client are visible only to people with access to that client. This can't be changed later."
+              hint="Questions for a department are visible only to people with access to that department. This can't be changed later."
               error={errors.clientId?.message}
               {...register('clientId')}
             >
@@ -143,8 +150,8 @@ export function QuestionForm({
             </SelectField>
           )
         : lockedClientName && (
-            <p className="rounded-md bg-restricted-bg px-3 py-2.5 text-sm text-restricted-ink">
-              This question is restricted to {lockedClientName}. A question's client can't be
+            <p className="rounded-lg bg-restricted-bg px-3 py-2.5 text-sm text-restricted-ink">
+              This question is restricted to {lockedClientName}. A question's department can't be
               changed after it is added.
             </p>
           )}
@@ -154,7 +161,13 @@ export function QuestionForm({
           Cancel
         </Link>
         <Button type="submit" variant="primary" loading={submitting}>
-          {mode === 'create' ? 'Add question' : 'Save changes'}
+          {mode === 'create'
+            ? goesLive
+              ? 'Add question'
+              : 'Submit for review'
+            : goesLive
+              ? 'Save changes'
+              : 'Save and resubmit'}
         </Button>
       </div>
     </form>

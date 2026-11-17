@@ -36,13 +36,15 @@ export interface HistoryItem {
   at: Date;
   actor: { id: string; name: string };
   changes?: unknown;
+  /** Reviewer's note on QUESTION_APPROVED / QUESTION_REJECTED. */
+  note?: string | null;
 }
 
 /**
  * History of one question. Callers must have checked the question is visible to the requester.
  * Payloads are NOT exposed wholesale: a DUPLICATE_OVERRIDDEN payload names other questions the
- * author could see, which this viewer may not be allowed to see. Only edit diffs (this question's
- * own fields) are returned.
+ * author could see, which this viewer may not be allowed to see. Only edit diffs and review notes
+ * (both about this question itself) are returned.
  */
 export async function listHistory(db: Queryable, questionId: string): Promise<HistoryItem[]> {
   const rows = await db.auditEvent.findMany({
@@ -57,6 +59,9 @@ export async function listHistory(db: Queryable, questionId: string): Promise<Hi
     actor: r.actor,
     ...(r.type === 'QUESTION_UPDATED'
       ? { changes: (r.payload as { changes?: unknown }).changes ?? {} }
+      : {}),
+    ...(r.type === 'QUESTION_APPROVED' || r.type === 'QUESTION_REJECTED'
+      ? { note: (r.payload as { note?: string | null }).note ?? null }
       : {}),
   }));
 }

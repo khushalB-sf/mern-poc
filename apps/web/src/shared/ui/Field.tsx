@@ -2,7 +2,8 @@ import { useId, type ComponentPropsWithRef, type ReactNode } from 'react';
 import { cx } from './cx';
 
 const CONTROL =
-  'w-full rounded-md border border-control bg-surface px-3 text-ink placeholder:text-ink-soft ' +
+  'w-full rounded-lg border border-control bg-surface px-3 text-ink shadow-sm transition-colors placeholder:text-ink-soft ' +
+  'hover:border-ink-soft focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 ' +
   'disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger';
 
 interface ShellProps {
@@ -40,7 +41,7 @@ function Shell({
 }: ShellProps & { ids: ReturnType<typeof useFieldIds>; aside?: ReactNode; children: ReactNode }) {
   return (
     <div className={className}>
-      <label htmlFor={ids.id} className="mb-1 block text-sm font-medium">
+      <label htmlFor={ids.id} className="mb-1.5 block text-sm font-medium">
         {label}
       </label>
       {hint && (

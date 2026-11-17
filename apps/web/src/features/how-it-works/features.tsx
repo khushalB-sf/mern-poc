@@ -296,7 +296,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       {
         title: 'You fill in the form and click Add question',
         detail:
-          'The Add question button exists only for Author and Reviewer accounts. The form checks length and tags before sending. If the API finds a near-duplicate, a dialog lists the matches and you choose whether to edit or add it anyway.',
+          'The Add question button exists only for Author and Admin accounts. The form checks length and tags before sending. If the API finds a near-duplicate, a dialog lists the matches and you choose whether to edit or add it anyway. An Author’s question starts as pending until a reviewer decides; an Admin’s goes live at once.',
         where: 'web · features/questions/QuestionForm.tsx, components/DuplicateDialog.tsx',
       },
       {
@@ -323,7 +323,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
         checks: [
           SESSION,
           RATE,
-          { text: 'The role is Author or Reviewer.', fail: '403 FORBIDDEN' },
+          { text: 'The role is Author or Admin.', fail: '403 FORBIDDEN' },
           {
             text: 'The body has the right shape: text 1 to 1000 characters, notes up to 10,000, at most 30 tags, no unknown fields.',
             fail: '400 VALIDATION_ERROR',
@@ -389,7 +389,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       {
         title: 'You change a question and click Save changes',
         detail:
-          'Edit question shows only for a Reviewer, or for an Author on a question they wrote. A question’s client cannot be changed.',
+          'Edit question shows only for an Author on a question they wrote, or for an Admin. A question’s department cannot be changed. An Author’s save sends it back for review.',
         where: 'web · features/questions/QuestionFormPage.tsx, auth/hooks.ts → canEdit()',
       },
       {
@@ -424,7 +424,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
         checks: [
           { text: 'You can see the question.', fail: '404 NOT_FOUND' },
           {
-            text: 'Your role allows it: Reviewer, or Author on your own question.',
+            text: 'Your role allows it: Author on your own question, or Admin.',
             fail: '403 FORBIDDEN',
           },
           {

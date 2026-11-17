@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
-import { DEMO_ACCOUNTS } from '../src/features/auth/demoAccounts';
+import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../src/features/auth/demoAccounts';
 import { baseHandlers, mockApi, renderApp } from './helpers';
 
 const signedOut = {
@@ -39,9 +39,11 @@ describe('how it works page', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'Roles' }));
     const roles = screen.getByRole('table', { name: 'What each role can do' });
+    // Nobody edits someone else's question; only Reviewers decide on it.
     const editOthers = within(roles).getByRole('row', { name: /Edit someone else/ });
-    // Only the Reviewer column allows it.
-    expect(within(editOthers).getByText('Any you can see')).toBeInTheDocument();
+    expect(within(editOthers).queryByText('yes')).toBeNull();
+    const review = within(roles).getByRole('row', { name: /Approve or reject/ });
+    expect(within(review).getByText('Pending, not your own')).toBeInTheDocument();
   });
 
   it('shows one tab at a time and keeps the open tab in the address', async () => {
@@ -60,8 +62,8 @@ describe('how it works page', () => {
 
     // One row per demo account plus the header row.
     expect(within(grants).getAllByRole('row')).toHaveLength(DEMO_ACCOUNTS.length + 1);
-    const rita = within(grants).getByRole('row', { name: /reviewer\.both@example\.com/ });
-    expect(within(rita).getAllByText('Yes')).toHaveLength(3); // Global, Acme, Globex
+    const rita = within(grants).getByRole('row', { name: /reviewer\.all@example\.com/ });
+    expect(within(rita).getAllByText('Yes')).toHaveLength(1 + DEMO_CLIENTS.length); // Global + every department
     const none = within(grants).getByRole('row', { name: /author\.none@example\.com/ });
     expect(within(none).getAllByText('Yes')).toHaveLength(1); // Global only
   });
@@ -146,12 +148,12 @@ describe('how it works page', () => {
     mockApi({ ...baseHandlers });
     renderApp('/how-it-works#grants');
     const map = await screen.findByRole('list', { name: 'Grant: what you can see: overview' });
-    const acme = within(map).getByText('Acme').closest('li')!;
-    const globex = within(map).getByText('Globex').closest('li')!;
-    // Dan holds both grants, so he appears under both clients.
-    expect(within(acme).getByText('author.both@')).toBeInTheDocument();
-    expect(within(globex).getByText('author.both@')).toBeInTheDocument();
-    expect(within(acme).queryByText('author.globex@')).not.toBeInTheDocument();
+    const mern = within(map).getByText('MERN').closest('li')!;
+    const mean = within(map).getByText('MEAN').closest('li')!;
+    // Alice holds both grants, so she appears under both departments.
+    expect(within(mern).getByText('author.mern@')).toBeInTheDocument();
+    expect(within(mean).getByText('author.mern@')).toBeInTheDocument();
+    expect(within(mern).queryByText('author.python@')).not.toBeInTheDocument();
     expect(within(map).getByText('author.none@')).toBeInTheDocument();
 
     for (const label of TAB_LABELS) {

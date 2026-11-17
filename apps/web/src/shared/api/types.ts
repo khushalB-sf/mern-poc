@@ -1,4 +1,5 @@
-export type Role = 'USER' | 'AUTHOR' | 'REVIEWER';
+export type Role = 'USER' | 'AUTHOR' | 'REVIEWER' | 'ADMIN';
+export type QuestionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface User {
   id: string;
@@ -19,6 +20,9 @@ export interface Question {
   client: { id: string; name: string } | null;
   tags: TagRef[];
   author: { id: string; name: string };
+  status: QuestionStatus;
+  /** Latest reviewer decision; null while PENDING. */
+  review: { note: string | null; reviewer: { id: string; name: string }; at: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,7 +43,12 @@ export interface Client {
   name: string;
 }
 
-export type HistoryType = 'QUESTION_CREATED' | 'QUESTION_UPDATED' | 'DUPLICATE_OVERRIDDEN';
+export type HistoryType =
+  | 'QUESTION_CREATED'
+  | 'QUESTION_UPDATED'
+  | 'DUPLICATE_OVERRIDDEN'
+  | 'QUESTION_APPROVED'
+  | 'QUESTION_REJECTED';
 
 export interface HistoryItem {
   id: string;
@@ -47,6 +56,20 @@ export interface HistoryItem {
   at: string;
   actor: { id: string; name: string };
   changes?: Record<string, { from: unknown; to: unknown }>;
+  /** Reviewer's note on QUESTION_APPROVED / QUESTION_REJECTED. */
+  note?: string | null;
+}
+
+/** A user as the admin screens see them. */
+export interface AdminUser extends User {
+  active: boolean;
+  clients: Client[];
+}
+
+/** A department (the API calls it a "client") with the number of users granted it. */
+export interface Department extends Client {
+  description: string | null;
+  userCount: number;
 }
 
 export interface DuplicateMatch {

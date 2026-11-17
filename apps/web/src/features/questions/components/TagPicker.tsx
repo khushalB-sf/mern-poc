@@ -40,7 +40,7 @@ export function TagPicker({ categories, selected, onToggle, compact = false }: P
                 <label
                   key={tag}
                   htmlFor={id}
-                  className="has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent flex min-h-9 cursor-pointer items-center gap-2 rounded-full border border-control bg-surface px-3 text-sm"
+                  className="has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:checked]:font-medium has-[:checked]:text-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent flex min-h-9 cursor-pointer items-center gap-2 rounded-full border border-control bg-surface px-3 text-sm transition-colors hover:border-ink-soft"
                 >
                   <input
                     id={id}

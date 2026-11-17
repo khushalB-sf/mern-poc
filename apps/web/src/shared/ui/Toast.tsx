@@ -41,13 +41,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <p
             key={t.id}
             className={cx(
-              'pointer-events-auto flex max-w-md items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium',
+              'pointer-events-auto flex max-w-md items-center gap-2.5 rounded-xl border px-4 py-3 text-sm font-medium shadow-lg',
               t.tone === 'success'
                 ? 'border-line bg-surface text-ink'
                 : 'border-danger bg-danger-bg text-danger',
             )}
           >
-            <Icon name={t.tone === 'success' ? 'check' : 'alert'} className="shrink-0" />
+            <Icon
+              name={t.tone === 'success' ? 'check' : 'alert'}
+              className={cx('shrink-0', t.tone === 'success' && 'text-ok')}
+            />
             {t.message}
           </p>
         ))}

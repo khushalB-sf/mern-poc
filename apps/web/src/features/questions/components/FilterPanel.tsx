@@ -1,13 +1,21 @@
 import type { Client, TagCategory } from '../../../shared/api/types';
+import { STATUS_LABEL } from '../../../shared/lib/format';
 import { Button } from '../../../shared/ui/Button';
-import { activeFilterCount, toggleTag, type Filters } from '../filters';
+import { STATUSES, activeFilterCount, toggleTag, type Filters } from '../filters';
 import { TagPicker } from './TagPicker';
+
+const STATUS_OPTIONS: { value: Filters['status']; label: string }[] = [
+  { value: '', label: 'Any status' },
+  ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+];
 
 interface Props {
   categories: TagCategory[] | undefined;
   clients: Client[] | undefined;
   tagsError: boolean;
   onRetryTags: () => void;
+  /** Read-only users only ever see approved questions, so they get no status control. */
+  showStatus: boolean;
   filters: Filters;
   onChange: (next: Filters) => void;
 }
@@ -17,12 +25,13 @@ export function FilterPanel({
   clients,
   tagsError,
   onRetryTags,
+  showStatus,
   filters,
   onChange,
 }: Props) {
   const active = activeFilterCount(filters);
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 [&_legend]:text-xs [&_legend]:uppercase [&_legend]:tracking-wider [&_legend]:text-ink-soft">
       {tagsError ? (
         <p role="alert" className="text-sm text-danger">
           Filters didn't load.{' '}
@@ -45,9 +54,32 @@ export function FilterPanel({
         />
       )}
 
+      {showStatus && (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-semibold">Review status</legend>
+          <div className="flex flex-col">
+            {STATUS_OPTIONS.map((o) => (
+              <label
+                key={o.value || 'any'}
+                className="flex min-h-10 cursor-pointer items-center gap-2.5 text-sm"
+              >
+                <input
+                  type="radio"
+                  name="status-filter"
+                  checked={filters.status === o.value}
+                  onChange={() => onChange({ ...filters, status: o.value, page: 1 })}
+                  className="size-4 accent-[var(--accent)]"
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       {clients && clients.length > 0 && (
         <fieldset>
-          <legend className="mb-1.5 text-sm font-semibold">Client</legend>
+          <legend className="mb-1.5 text-sm font-semibold">Department</legend>
           <div className="flex flex-col">
             {[
               { id: '', name: 'All questions' },
@@ -75,7 +107,7 @@ export function FilterPanel({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => onChange({ ...filters, tags: [], clientId: '', page: 1 })}
+          onClick={() => onChange({ ...filters, tags: [], clientId: '', status: '', page: 1 })}
         >
           Clear filters
         </Button>

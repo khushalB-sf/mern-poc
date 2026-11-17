@@ -67,7 +67,7 @@ describe('accessibility (axe-core)', () => {
   it('add-question form, including field errors', async () => {
     mockApi({ ...baseHandlers });
     const { container } = renderApp('/questions/new');
-    await userEvent.click(await screen.findByRole('button', { name: 'Add question' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }));
     await screen.findByText('Enter the question');
     expect(await violations(container)).toEqual([]);
   });
@@ -88,7 +88,7 @@ describe('accessibility (axe-core)', () => {
     });
     const { container } = renderApp('/questions/new');
     await userEvent.type(await screen.findByLabelText('Question'), 'Existing question text!');
-    await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveAccessibleName('This looks like a question we already have');
     expect(await violations(container)).toEqual([]);

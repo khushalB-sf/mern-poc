@@ -101,12 +101,14 @@ describe('login', () => {
     expect(sessionStorage.length).toBe(0);
   });
 
-  it('fills the email from a demo account (dev builds only) without touching the password', async () => {
+  it('fills the email and the demo password from a demo account (dev builds only)', async () => {
     mockApi({ ...signedOut });
     renderApp('/login');
     await userEvent.click(await screen.findByText('Demo accounts'));
-    await userEvent.click(screen.getByRole('button', { name: /Reviewer with Acme access/ }));
-    await waitFor(() => expect(screen.getByLabelText('Email')).toHaveValue('reviewer@example.com'));
-    expect(screen.getByLabelText('Password')).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: /Reviewer for MERN and MEAN/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Email')).toHaveValue('reviewer.web@example.com'),
+    );
+    expect(screen.getByLabelText('Password')).toHaveValue('Passw0rd!demo');
   });
 });

@@ -1,4 +1,5 @@
-import type { TagCategory } from '../../../shared/api/types';
+import type { QuestionStatus, TagCategory } from '../../../shared/api/types';
+import { STATUS_LABEL } from '../../../shared/lib/format';
 import { Icon } from '../../../shared/ui/Icon';
 import { cx } from '../../../shared/ui/cx';
 
@@ -11,7 +12,7 @@ const DOT: Record<string, string> = {
 
 export function TagChip({ category, label }: { category: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-xs">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-2.5 py-0.5 text-xs font-medium">
       <span
         aria-hidden="true"
         className={cx('size-2 rounded-full', DOT[category] ?? 'bg-control')}
@@ -27,8 +28,32 @@ export function ClientBadge({ name }: { name: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-restricted-bg px-2.5 py-0.5 text-xs font-medium text-restricted-ink">
       <Icon name="lock" className="size-3" />
-      <span className="sr-only">Restricted to client: </span>
+      <span className="sr-only">Restricted to department: </span>
       {name} only
+    </span>
+  );
+}
+
+// Text always carries the meaning; colour only reinforces it.
+const STATUS_ICON = { PENDING: 'clock', APPROVED: 'check', REJECTED: 'x' } as const;
+
+const STATUS_STYLE: Record<QuestionStatus, string> = {
+  PENDING: 'bg-pending-bg text-pending-ink',
+  APPROVED: 'bg-ok-bg text-ok',
+  REJECTED: 'bg-danger-bg text-danger',
+};
+
+export function StatusBadge({ status }: { status: QuestionStatus }) {
+  return (
+    <span
+      className={cx(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        STATUS_STYLE[status],
+      )}
+    >
+      <Icon name={STATUS_ICON[status]} className="size-3" />
+      <span className="sr-only">Status: </span>
+      {STATUS_LABEL[status]}
     </span>
   );
 }

@@ -34,6 +34,17 @@ export interface QuestionInput {
 export const createQuestion = (body: QuestionInput) =>
   apiFetch<{ question: Question }>('/questions', { method: 'POST', body }).then((r) => r.question);
 
+export const deleteQuestion = (id: string) =>
+  apiFetch<void>(`/questions/${id}`, { method: 'DELETE' });
+
+export const reviewQuestion = (
+  id: string,
+  body: { decision: 'APPROVED' | 'REJECTED'; note: string },
+) =>
+  apiFetch<{ question: Question }>(`/questions/${id}/review`, { method: 'POST', body }).then(
+    (r) => r.question,
+  );
+
 export const updateQuestion = (
   id: string,
   body: Pick<QuestionInput, 'text' | 'answerNotes' | 'tags'>,

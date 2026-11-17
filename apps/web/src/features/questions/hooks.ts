@@ -1,11 +1,13 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createQuestion,
+  deleteQuestion,
   getHistory,
   getQuestion,
   listClients,
   listQuestions,
   listTags,
+  reviewQuestion,
   updateQuestion,
   type QuestionInput,
 } from './api';
@@ -63,6 +65,29 @@ export function useCreateQuestion() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: QuestionInput) => createQuestion(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['questions'] }),
+  });
+}
+
+export function useDeleteQuestion(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => deleteQuestion(id),
+    // The list and counts change; the detail query is dropped so nothing refetches a question that is gone.
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: ['questions', 'detail', id] });
+      qc.removeQueries({ queryKey: ['questions', 'history', id] });
+      return qc.invalidateQueries({ queryKey: ['questions'] });
+    },
+  });
+}
+
+export function useReviewQuestion(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { decision: 'APPROVED' | 'REJECTED'; note: string }) =>
+      reviewQuestion(id, input),
+    // Detail, history and every list (the reviewer's queue changes) are now stale.
     onSuccess: () => qc.invalidateQueries({ queryKey: ['questions'] }),
   });
 }

@@ -4,7 +4,7 @@
 const BOXES = [
   { x: 10, w: 110, title: 'Browser', sub: 'sends the cookie' },
   { x: 165, w: 140, title: 'requireAuth', sub: 'valid session?' },
-  { x: 350, w: 140, title: 'requireRole', sub: 'create only' },
+  { x: 350, w: 140, title: 'requireRole', sub: 'create and admin' },
   { x: 535, w: 140, title: 'Zod validation', sub: 'right shape?' },
   { x: 720, w: 170, title: 'Handler → Service', sub: 'visible? allowed?', accent: true },
   { x: 935, w: 115, title: 'Postgres', sub: 'SQL + Prisma' },
@@ -23,9 +23,9 @@ const H = 64;
 export const GATES = [
   'The browser sends the session cookie with the request.',
   'requireAuth checks the session. If it is not valid, the request ends with 401.',
-  'requireRole checks the role. It runs on create only. If it is not allowed, 403.',
+  'requireRole checks the role. It runs on create and on /admin only. If it is not allowed, 403.',
   'Zod validation checks the shape of the input. If it is wrong, 400.',
-  'The handler calls the service, which checks visibility (404), then role and ownership (403), and for a create the duplicate check (409).',
+  'The handler calls the service, which checks visibility (404), then role and ownership (403), then state for a review (409) or the duplicate check for a create (409).',
   'Postgres runs the query. Reads carry the visibility rule in the SQL.',
   'The answer travels back as JSON: the data, or an error body.',
 ];

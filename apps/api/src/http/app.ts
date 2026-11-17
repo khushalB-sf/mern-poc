@@ -6,6 +6,7 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import type { Config } from '../config/env.js';
 import type { Db } from '../db/prisma.js';
+import { adminRoutes } from '../modules/admin/routes.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { clientRoutes } from '../modules/clients/routes.js';
 import { questionRoutes } from '../modules/questions/routes.js';
@@ -61,6 +62,7 @@ export function createApp({ config, logger, db }: AppDeps): Express {
   api.use('/questions', questionRoutes(db, config));
   api.use('/tags', tagRoutes(db, config));
   api.use('/clients', clientRoutes(db, config));
+  api.use('/admin', adminRoutes(db, config));
   app.use('/api', api);
 
   app.use(notFoundHandler);

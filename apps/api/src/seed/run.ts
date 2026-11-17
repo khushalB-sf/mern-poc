@@ -1,6 +1,6 @@
 import { loadConfig } from '../config/env.js';
 import { createDb } from '../db/prisma.js';
-import { isEmpty, seed } from './seed.js';
+import { ensureAdmin, isEmpty, seed } from './seed.js';
 
 // Usage: run.ts [--if-empty]   (without the flag, refuses to touch a non-empty database)
 const ifEmpty = process.argv.includes('--if-empty');
@@ -12,6 +12,8 @@ try {
     console.log(
       ifEmpty ? 'seed: database not empty, skipping' : 'seed: database not empty, refusing',
     );
+    if (ifEmpty && (await ensureAdmin(db, config.SEED_PASSWORD)))
+      console.log('seed: added demo admin');
     process.exitCode = ifEmpty ? 0 : 1;
   } else {
     const t = Date.now();

@@ -38,6 +38,8 @@ export const question = (over: Record<string, unknown> = {}) => ({
   client: null,
   tags: [{ category: 'technology', value: 'nodejs' }],
   author: { id: 'u1', name: 'Alice Author' },
+  status: 'APPROVED',
+  review: null,
   createdAt: '2026-01-02T10:00:00.000Z',
   updatedAt: '2026-01-02T10:00:00.000Z',
   ...over,

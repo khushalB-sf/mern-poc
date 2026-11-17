@@ -129,8 +129,9 @@ function GrantsPanel() {
         </table>
       </div>
       <p className="text-sm text-ink-soft">
-        A restricted question carries this badge: <ClientBadge name="Acme" />. Reviewers get no
-        exception: without a grant, a Reviewer cannot see or edit that client.
+        A restricted question carries this badge: <ClientBadge name="MERN" />. Reviewers get no
+        exception: without a grant, a Reviewer cannot see or review that department. Only an Admin
+        sees every department.
       </p>
     </Detail>
   );
@@ -483,7 +484,7 @@ export function HowItWorksPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <h1 className="font-serif text-3xl font-semibold leading-tight sm:text-4xl">How it works</h1>
       <p className="mt-3 max-w-3xl text-lg text-ink-soft">
         Two separate questions decide everything.{' '}
@@ -495,6 +496,7 @@ export function HowItWorksPage() {
       <div
         role="tablist"
         aria-label="How it works"
+        tabIndex={0}
         onKeyDown={onKeyDown}
         className="mt-6 flex gap-2 overflow-x-auto pb-1"
       >

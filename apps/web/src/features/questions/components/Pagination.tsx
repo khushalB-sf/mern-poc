@@ -16,7 +16,7 @@ export function Pagination({ page, pageSize, total, onPage }: Props) {
   return (
     <nav
       aria-label="Pagination"
-      className="flex items-center justify-between gap-3 border-t border-line pt-4"
+      className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-3 shadow-sm"
     >
       <Button size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
         <Icon name="chevronLeft" />

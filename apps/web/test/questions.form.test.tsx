@@ -13,7 +13,7 @@ describe('add question', () => {
   it('validates required fields without calling the server', async () => {
     const calls = mockApi({ ...baseHandlers });
     renderApp('/questions/new');
-    await userEvent.click(await screen.findByRole('button', { name: 'Add question' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }));
     expect(await screen.findByText('Enter the question')).toBeInTheDocument();
     expect(screen.getByLabelText('Question')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Question')).toHaveFocus(); // focus moves to the first error
@@ -39,7 +39,7 @@ describe('add question', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: 'React' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Senior' }));
     await userEvent.selectOptions(screen.getByLabelText(/Who can see/), 'c1');
-    await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
 
     await screen.findByRole('heading', { name: 'What is a closure?' });
     expect(router.state.location.pathname).toBe('/questions/new1');
@@ -50,7 +50,7 @@ describe('add question', () => {
       clientId: 'c1',
       confirmNotDuplicate: false,
     });
-    expect(await screen.findByText('Question added')).toBeInTheDocument();
+    expect(await screen.findByText('Question submitted for review')).toBeInTheDocument();
   });
 
   it('omits the client picker when the user has no clients (nothing to restrict to)', async () => {
@@ -76,7 +76,7 @@ describe('add question', () => {
       mockApi({ ...baseHandlers, 'POST /api/questions': dup });
       renderApp('/questions/new');
       await fillQuestion();
-      await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
 
       const dialog = await screen.findByRole('dialog');
       expect(
@@ -91,7 +91,7 @@ describe('add question', () => {
       mockApi({ ...baseHandlers, 'POST /api/questions': dup });
       renderApp('/questions/new');
       await fillQuestion();
-      await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
       await userEvent.click(await screen.findByRole('button', { name: 'Go back and edit' }));
       await waitFor(() =>
         expect(screen.getByRole('dialog', { hidden: true })).not.toHaveAttribute('open'),
@@ -114,7 +114,7 @@ describe('add question', () => {
       });
       const { router } = renderApp('/questions/new');
       await fillQuestion();
-      await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
       await userEvent.click(
         await screen.findByRole('button', { name: "It's different, add it anyway" }),
       );
@@ -144,7 +144,7 @@ describe('add question', () => {
     });
     renderApp('/questions/new');
     await fillQuestion();
-    await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
     expect(await screen.findByText('Too long for the server')).toBeInTheDocument();
     expect(screen.getByLabelText('Answer notes')).toHaveAttribute('aria-invalid', 'true');
   });
@@ -175,7 +175,7 @@ describe('edit question', () => {
     expect(screen.getByRole('checkbox', { name: 'React' })).toBeChecked();
     await userEvent.clear(text);
     await userEvent.type(text, 'Reworded question');
-    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save and resubmit' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/questions/q1'));
     expect(calls.find((c) => c.method === 'PATCH')!.body).toEqual({
       text: 'Reworded question',
@@ -197,7 +197,7 @@ describe('edit question', () => {
     ).toBeInTheDocument();
   });
 
-  it("a reviewer can edit anyone's question", async () => {
+  it('a reviewer cannot edit a question: they review it instead', async () => {
     mockApi({
       ...baseHandlers,
       'GET /api/auth/me': { body: { user: { ...USER, id: 'rev', role: 'REVIEWER' } } },
@@ -206,7 +206,10 @@ describe('edit question', () => {
       },
     });
     renderApp('/questions/q9/edit');
-    expect(await screen.findByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: "You can't edit this question" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save and resubmit' })).toBeNull();
   });
 
   it("shows the fixed client instead of a picker (a question's client cannot change)", async () => {
@@ -242,5 +245,40 @@ describe('list -> add flow wiring', () => {
     renderApp('/');
     await userEvent.click(await screen.findByRole('link', { name: /Add question/ }));
     expect(await screen.findByRole('heading', { name: 'Add a question' })).toBeInTheDocument();
+  });
+});
+
+describe('admin creating and editing', () => {
+  const ADMIN = { ...USER, id: 'adm', name: 'Ada Admin', role: 'ADMIN' } as const;
+  const asAdmin = { 'GET /api/auth/me': { body: { user: ADMIN } } };
+
+  it('can add a question, with wording that says it goes live at once', async () => {
+    mockApi({
+      ...baseHandlers,
+      ...asAdmin,
+      'POST /api/questions': { status: 201, body: { question: question({ id: 'new' }) } },
+      'GET /api/questions/new': { body: { question: question({ id: 'new' }) } },
+      'GET /api/questions/new/history': { body: { items: [] } },
+    });
+    renderApp('/questions/new');
+    await userEvent.type(await screen.findByLabelText('Question'), 'Brand new admin question');
+    await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    expect(await screen.findByText('Question added')).toBeInTheDocument();
+  });
+
+  it("can edit anyone's question and saves without the resubmit wording", async () => {
+    mockApi({
+      ...baseHandlers,
+      ...asAdmin,
+      'GET /api/questions/q9': {
+        body: { question: question({ id: 'q9', author: { id: 'other', name: 'Bob' } }) },
+      },
+      'GET /api/questions/q9/history': { body: { items: [] } },
+      'PATCH /api/questions/q9': { body: { question: question({ id: 'q9' }) } },
+    });
+    renderApp('/questions/q9/edit');
+    await userEvent.click(await screen.findByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Changes saved')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save and resubmit' })).toBeNull();
   });
 });

@@ -1,9 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/prisma.js';
 import { hashPassword } from '../modules/auth/password.js';
-import { CATEGORIES, CLIENTS, FIXTURES, USERS } from './data.js';
+import {
+  BEHAVIOURS,
+  CATEGORIES,
+  DEPARTMENTS,
+  FIXTURES,
+  FOLLOWUPS,
+  GENERAL_TOPICS,
+  REVIEW_DEMO,
+  TOPICS,
+  USERS,
+} from './data.js';
 
-// Deterministic PRNG (mulberry32) so every run produces the same 5,000 questions.
+// Deterministic PRNG (mulberry32) so every run produces the same questions.
 function prng(seed: number) {
   let a = seed;
   return () => {
@@ -14,110 +24,8 @@ function prng(seed: number) {
   };
 }
 
-const VERBS = [
-  'implement',
-  'debug',
-  'optimise',
-  'test',
-  'secure',
-  'monitor',
-  'refactor',
-  'scale',
-  'migrate',
-  'document',
-  'review',
-  'deploy',
-];
-const OBJECTS = [
-  'a rate limiter',
-  'a job queue',
-  'a search endpoint',
-  'a file upload flow',
-  'a caching layer',
-  'a feature-flag system',
-  'an audit log',
-  'a retry policy',
-  'a pagination scheme',
-  'a notification service',
-  'a session store',
-  'a data import',
-  'a webhook receiver',
-  'a permissions model',
-  'a background scheduler',
-];
-const CONCEPTS = [
-  'caching',
-  'pagination',
-  'error handling',
-  'authentication',
-  'concurrency',
-  'memory management',
-  'testing',
-  'logging',
-  'configuration',
-  'migrations',
-  'indexing',
-  'retries',
-  'rate limiting',
-  'transactions',
-  'streaming',
-  'state management',
-  'dependency injection',
-  'serialisation',
-  'scheduling',
-  'observability',
-  'validation',
-  'idempotency',
-  'backpressure',
-  'garbage collection',
-  'connection pooling',
-  'schema evolution',
-];
-const SYSTEMS = [
-  'a URL shortener',
-  'a chat service',
-  'a ticket booking system',
-  'an analytics pipeline',
-  'a payments ledger',
-  'a comment system',
-  'a leaderboard',
-  'a document editor',
-  'a metrics collector',
-  'an email digest service',
-];
-const USECASES = [
-  'a read-heavy API',
-  'a batch pipeline',
-  'a small team',
-  'a latency-sensitive service',
-  'a prototype',
-  'an internal tool',
-  'a high-write workload',
-  'a regulated environment',
-];
-const BEHAVIOURS = [
-  'push back on a deadline',
-  'resolve a team disagreement',
-  'learn a new stack quickly',
-  'handle a production incident',
-  'mentor a junior colleague',
-  'give difficult feedback',
-  'take over unfamiliar code',
-  'say no to a stakeholder',
-  'recover from a failed release',
-  'balance speed against quality',
-];
-const FOLLOWUPS = [
-  'what would change at ten times the load',
-  'how you would test it',
-  'what you would monitor',
-  'how it fails',
-  'what you would cut for a first release',
-  'how you would roll it back',
-];
-
-const techTags = CATEGORIES[0].tags.map(([v]) => v);
 const levelTags = CATEGORIES[1].tags.map(([v]) => v);
+const techLabel = new Map<string, string>(CATEGORIES[0].tags.map(([v, l]) => [v, l]));
 
 export interface SeedOptions {
   password: string;
@@ -130,7 +38,7 @@ export async function isEmpty(db: Db) {
   return users === 0 && questions === 0;
 }
 
-export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptions) {
+export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptions) {
   const rand = prng(20261014);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]!;
   const sample = <T>(xs: readonly T[], n: number): T[] =>
@@ -138,7 +46,9 @@ export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptio
 
   const passwordHash = await hashPassword(password);
 
-  const clients = await Promise.all(CLIENTS.map((name) => db.client.create({ data: { name } })));
+  const clients = await Promise.all(
+    DEPARTMENTS.map((d) => db.client.create({ data: { name: d.name } })),
+  );
   const users = await Promise.all(
     USERS.map((u) =>
       db.appUser.create({
@@ -163,17 +73,12 @@ export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptio
     }
   }
 
-  // Who may author what: a client question needs an author granted for that client.
-  const authorsForClient = [
-    ['author.acme@example.com', 'author.both@example.com', 'reviewer@example.com'],
-    ['author.globex@example.com', 'author.both@example.com'],
-  ].map((emails) => emails.map((e) => userByEmail.get(e)!));
-  const globalAuthors = [
-    'author.acme@example.com',
-    'author.globex@example.com',
-    'author.none@example.com',
-    'author.both@example.com',
-  ].map((e) => userByEmail.get(e)!);
+  // Who may author what: a department question needs an author granted for that department.
+  const authors = USERS.filter((u) => u.role === 'AUTHOR');
+  const authorsFor = (dept: number | null) =>
+    authors
+      .filter((u) => dept === null || (u.grants as readonly number[]).includes(dept))
+      .map((u) => userByEmail.get(u.email)!);
 
   type Row = {
     id: string;
@@ -183,85 +88,132 @@ export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptio
     clientId: string | null;
     tags: string[];
     at: Date;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    note?: string;
   };
   const rows: Row[] = [];
   const base = Date.UTC(2026, 0, 1);
-
-  for (const f of FIXTURES) {
-    const authors = f.client === null ? globalAuthors : authorsForClient[f.client]!;
+  const addRow = (
+    r: Omit<Row, 'id' | 'authorId' | 'clientId' | 'at' | 'status'> & {
+      client: number | null;
+      status?: Row['status'];
+    },
+    n: number,
+  ) => {
+    const { client, status, ...rest } = r;
     rows.push({
+      ...rest,
       id: randomUUID(),
-      text: f.text,
-      notes: f.notes,
-      authorId: authors[0]!.id,
-      clientId: f.client === null ? null : clients[f.client]!.id,
-      tags: [...f.tags],
-      at: new Date(base),
+      authorId: pick(authorsFor(client)).id,
+      clientId: client === null ? null : clients[client]!.id,
+      at: new Date(base + n * 60_000),
+      status: status ?? 'APPROVED',
     });
-  }
-
-  const seen = new Set<string>(FIXTURES.map((f) => f.text));
-  const generate = () => {
-    const tech = pick(techTags);
-    const tech2 = pick(techTags.filter((t) => t !== tech));
-    const label = (t: string) => CATEGORIES[0].tags.find(([v]) => v === t)![1];
-    const kind = Math.floor(rand() * 6);
-    let text: string;
-    let type: string;
-    const tags = [`technology:${tech}`];
-    switch (kind) {
-      case 0:
-        text = `How would you ${pick(VERBS)} ${pick(OBJECTS)} in ${label(tech)}?`;
-        type = 'technical';
-        break;
-      case 1:
-        text = `What is the difference between ${pick(CONCEPTS)} and ${pick(CONCEPTS)} in ${label(tech)}?`;
-        type = pick(['technical', 'screening']);
-        break;
-      case 2:
-        text = `Explain how ${label(tech)} handles ${pick(CONCEPTS)}.`;
-        type = pick(['technical', 'coding']);
-        break;
-      case 3:
-        text = `Describe a time you had to ${pick(BEHAVIOURS)}.`;
-        type = 'behavioural';
-        tags.length = 0; // behavioural questions are not technology-specific
-        break;
-      case 4:
-        text = `Design ${pick(SYSTEMS)} using ${label(tech)}. Which trade-offs would you make?`;
-        type = 'system-design';
-        break;
-      default:
-        text = `Why would you choose ${label(tech)} over ${label(tech2)} for ${pick(USECASES)}?`;
-        type = 'technical';
-        tags.push(`technology:${tech2}`);
-    }
-    tags.push(`type:${type}`, `seniority:${pick(levelTags)}`);
-    if (rand() < 0.2) tags.push(`seniority:${pick(levelTags)}`);
-
-    const [a, b, c] = sample(CONCEPTS, 3);
-    const notes = `A strong answer covers ${a}, ${b} and ${c}. Follow-up: ${pick(FOLLOWUPS)}.`;
-    return { text, notes, tags: [...new Set(tags)] };
   };
 
-  for (let i = 0; i < questionCount; i++) {
-    // Retry until the text is new, so the bank has no exact duplicates (the templates have ~11k combinations).
-    let q = generate();
-    for (let tries = 0; seen.has(q.text) && tries < 200; tries++) q = generate();
-    seen.add(q.text);
+  for (const f of FIXTURES)
+    addRow({ text: f.text, notes: f.notes, tags: [...f.tags], client: f.client }, 0);
 
-    // ~10% belong to a client (split roughly evenly), the rest are global.
-    const client = rand() < 0.1 ? (rand() < 0.5 ? 0 : 1) : null;
-    const authors = client === null ? globalAuthors : authorsForClient[client]!;
-    rows.push({
-      id: randomUUID(),
-      text: q.text,
-      notes: q.notes,
-      authorId: pick(authors).id,
-      clientId: client === null ? null : clients[client]!.id,
-      tags: q.tags,
-      at: new Date(base + i * 60_000),
-    });
+  const withLevel = (type: string, tech: readonly string[]) => {
+    const tags = tech.map((t) => `technology:${t}`);
+    tags.push(`type:${type}`, `seniority:${pick(levelTags)}`);
+    if (rand() < 0.2) tags.push(`seniority:${pick(levelTags)}`);
+    return [...new Set(tags)];
+  };
+
+  // Department question: built only from that department's technologies and their own topics.
+  const departmentQuestion = (d: (typeof DEPARTMENTS)[number]) => {
+    const kind = Math.floor(rand() * 10);
+    const tech = pick(d.techs);
+    const label = techLabel.get(tech)!;
+    const topics = TOPICS[tech]!;
+    const [a, b] = sample(topics, 2) as [string, string];
+    if (kind < 3) {
+      return {
+        text: `Explain ${a} in ${label}.`,
+        notes: `A strong answer defines ${a}, gives a concrete ${label} example and names common pitfalls. Follow-up: ${pick(FOLLOWUPS)}.`,
+        tags: withLevel(pick(['technical', 'screening']), [tech]),
+      };
+    }
+    if (kind < 6) {
+      return {
+        text: `What are the trade-offs between ${a} and ${b} in ${label}?`,
+        notes: `A strong answer compares ${a} and ${b} with an example and says when each one wins. Follow-up: ${pick(FOLLOWUPS)}.`,
+        tags: withLevel('technical', [tech]),
+      };
+    }
+    if (kind < 8) {
+      return {
+        text: `How would you test and debug problems with ${a} in ${label}?`,
+        notes: `A strong answer names the tools and signals it would use for ${a}, and how it reproduces the problem. Follow-up: ${pick(FOLLOWUPS)}.`,
+        tags: withLevel(pick(['technical', 'coding']), [tech]),
+      };
+    }
+    if (kind < 9) {
+      const task = pick(d.tasks);
+      return {
+        text: `Walk me through how you would ${task}.`,
+        notes: `Look for a clear sequence of steps, the trade-offs, and how the candidate would verify it works. Follow-up: ${pick(FOLLOWUPS)}.`,
+        tags: withLevel('coding', sample(d.techs, 2)),
+      };
+    }
+    return {
+      text: `Design ${pick(d.systems)}. Which trade-offs would you make?`,
+      notes: `Look for requirements first, then data model, scaling and failure handling. Follow-up: ${pick(FOLLOWUPS)}.`,
+      tags: withLevel('system-design', sample(d.techs, 2)),
+    };
+  };
+
+  // Global question: behavioural, or a practice that applies to every department. No technology tag.
+  const globalQuestion = () => {
+    const kind = Math.floor(rand() * 8);
+    if (kind === 0) {
+      return {
+        text: `Describe a time you had to ${pick(BEHAVIOURS)}.`,
+        notes: `Look for a specific situation, the action taken and what the candidate learned. Follow-up: ${pick(FOLLOWUPS)}.`,
+        tags: withLevel('behavioural', []),
+      };
+    }
+    const [a, b] = sample(GENERAL_TOPICS, 2) as [string, string];
+    return kind < 4
+      ? {
+          text: `Explain ${a}.`,
+          notes: `A strong answer defines ${a}, gives a real example and names common pitfalls. Follow-up: ${pick(FOLLOWUPS)}.`,
+          tags: withLevel(pick(['technical', 'screening']), []),
+        }
+      : {
+          text: `What are the trade-offs between ${a} and ${b}?`,
+          notes: `A strong answer compares ${a} and ${b} with an example and says when each one wins.`,
+          tags: withLevel('technical', []),
+        };
+  };
+
+  const seen = new Set<string>(FIXTURES.map((f) => f.text));
+  for (let i = 0; i < questionCount; i++) {
+    // ~15% are global; the rest belong to a department (the templates have a few thousand combinations).
+    const dept = rand() < 0.15 ? null : Math.floor(rand() * DEPARTMENTS.length);
+    let q = dept === null ? globalQuestion() : departmentQuestion(DEPARTMENTS[dept]!);
+    for (let tries = 0; seen.has(q.text) && tries < 200; tries++) {
+      q = dept === null ? globalQuestion() : departmentQuestion(DEPARTMENTS[dept]!);
+    }
+    if (seen.has(q.text)) continue; // vocabulary exhausted for this pick: skip rather than store a duplicate
+    seen.add(q.text);
+    addRow({ ...q, client: dept }, i);
+  }
+
+  const reviewer = userByEmail.get('reviewer.all@example.com')!;
+  for (const [i, d] of REVIEW_DEMO.entries()) {
+    addRow(
+      {
+        text: d.text,
+        notes: d.notes,
+        tags: [...d.tags],
+        client: d.client,
+        status: d.status,
+        ...('note' in d && { note: d.note }),
+      },
+      questionCount + i,
+    );
   }
 
   const BATCH = 1000;
@@ -277,6 +229,12 @@ export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptio
           clientId: r.clientId,
           createdAt: r.at,
           updatedAt: r.at,
+          status: r.status,
+          ...(r.status === 'REJECTED' && {
+            reviewNote: r.note ?? null,
+            reviewedById: reviewer.id,
+            reviewedAt: r.at,
+          }),
         })),
       }),
       db.questionTag.createMany({
@@ -294,5 +252,18 @@ export async function seed(db: Db, { password, questionCount = 5000 }: SeedOptio
     ]);
   }
 
-  return { users: users.length, clients: clients.length, questions: rows.length };
+  return { users: users.length, departments: clients.length, questions: rows.length };
+}
+
+/**
+ * Makes sure the demo admin exists. A database seeded before the ADMIN role existed is not empty, so the
+ * normal seed skips it; this keeps `SEED_ON_START` deployments able to log in as admin. Demo/dev only.
+ */
+export async function ensureAdmin(db: Db, password: string) {
+  const email = 'admin@example.com';
+  if (await db.appUser.findUnique({ where: { email } })) return false;
+  await db.appUser.create({
+    data: { email, name: 'Ada Admin', role: 'ADMIN', passwordHash: await hashPassword(password) },
+  });
+  return true;
 }

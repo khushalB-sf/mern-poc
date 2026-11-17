@@ -1,6 +1,9 @@
 import type { RouteObject } from 'react-router';
 import { LoginPage } from '../features/auth/LoginPage';
+import { AdminDepartmentsPage } from '../features/admin/AdminDepartmentsPage';
+import { AdminUsersPage } from '../features/admin/AdminUsersPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
+import { RequireRole } from '../features/auth/RequireRole';
 import { HowItWorksPage } from '../features/how-it-works/HowItWorksPage';
 import { QuestionDetailPage } from '../features/questions/QuestionDetailPage';
 import { QuestionFormPage } from '../features/questions/QuestionFormPage';
@@ -27,6 +30,13 @@ export const routes: RouteObject[] = [
           { path: 'questions/new', element: <QuestionFormPage mode="create" /> },
           { path: 'questions/:id', element: <QuestionDetailPage /> },
           { path: 'questions/:id/edit', element: <QuestionFormPage mode="edit" /> },
+          {
+            element: <RequireRole roles={['ADMIN']} />,
+            children: [
+              { path: 'admin/users', element: <AdminUsersPage /> },
+              { path: 'admin/departments', element: <AdminDepartmentsPage /> },
+            ],
+          },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
