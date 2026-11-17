@@ -18,6 +18,8 @@ export function TagPicker({ categories, selected, onToggle }: Props) {
           <div className="flex flex-wrap gap-2">
             {c.tags.map((t) => {
               const tag = `${c.slug}:${t.value}`;
+              // A retired technology is not offered, unless the question already carries it.
+              if (t.retired && !selected.includes(tag)) return null;
               const id = `${prefix}-${tag}`;
               return (
                 <label
@@ -34,6 +36,7 @@ export function TagPicker({ categories, selected, onToggle }: Props) {
                   />
                   {selected.includes(tag) && <span aria-hidden="true">✓</span>}
                   {t.label}
+                  {t.retired && <span className="text-xs text-ink-soft">(retired)</span>}
                 </label>
               );
             })}

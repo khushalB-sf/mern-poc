@@ -4,8 +4,15 @@ import {
   createUser,
   deleteDepartment,
   deleteUser,
+  getDepartmentImpact,
   listAdminDepartments,
   listAdminUsers,
+  listDeletedDepartments,
+  listDeletedQuestions,
+  listTechnologies,
+  restoreDepartment,
+  restoreQuestion,
+  setTechnologyRetired,
   setUserClients,
   updateDepartment,
   updateUser,
@@ -36,7 +43,9 @@ function useAdminMutation<V, R>(fn: (v: V) => Promise<R>) {
     mutationFn: fn,
     onSuccess: () =>
       Promise.all(
-        ['admin', 'clients', 'questions'].map((k) => qc.invalidateQueries({ queryKey: [k] })),
+        ['admin', 'clients', 'questions', 'tags'].map((k) =>
+          qc.invalidateQueries({ queryKey: [k] }),
+        ),
       ),
   });
 }
@@ -61,3 +70,37 @@ export const useUpdateDepartment = () =>
     updateDepartment(id, patch),
   );
 export const useDeleteDepartment = () => useAdminMutation((id: string) => deleteDepartment(id));
+
+export const useDeletedDepartments = () =>
+  useQuery({
+    queryKey: ['admin', 'departments-deleted'],
+    queryFn: ({ signal }) => listDeletedDepartments(signal),
+  });
+
+/** Fetched fresh each time the delete dialog opens, so the counts are current. */
+export const useDepartmentImpact = (id: string | null) =>
+  useQuery({
+    queryKey: ['admin', 'department-impact', id],
+    queryFn: ({ signal }) => getDepartmentImpact(id!, signal),
+    enabled: id !== null,
+    gcTime: 0,
+  });
+
+export const useRestoreDepartment = () => useAdminMutation((id: string) => restoreDepartment(id));
+
+export const useDeletedQuestions = () =>
+  useQuery({
+    queryKey: ['admin', 'deleted-questions'],
+    queryFn: ({ signal }) => listDeletedQuestions(signal),
+  });
+
+export const useRestoreQuestion = () => useAdminMutation((id: string) => restoreQuestion(id));
+
+export const useTechnologies = () =>
+  useQuery({
+    queryKey: ['admin', 'technologies'],
+    queryFn: ({ signal }) => listTechnologies(signal),
+  });
+
+export const useSetTechnologyRetired = () =>
+  useAdminMutation((v: { id: string; retired: boolean }) => setTechnologyRetired(v));

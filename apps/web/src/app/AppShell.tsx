@@ -119,6 +119,12 @@ export function AppShell() {
               <SideLink to="/admin/departments" icon="building">
                 Departments
               </SideLink>
+              <SideLink to="/admin/technologies" icon="tag">
+                Technologies
+              </SideLink>
+              <SideLink to="/admin/deleted-questions" icon="trash">
+                Deleted questions
+              </SideLink>
             </nav>
           )}
 

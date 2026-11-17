@@ -365,7 +365,11 @@ export function buildOpenApi() {
                           type: 'array',
                           items: {
                             type: 'object',
-                            properties: { value: { type: 'string' }, label: { type: 'string' } },
+                            properties: {
+                              value: { type: 'string' },
+                              label: { type: 'string' },
+                              retired: { type: 'boolean' },
+                            },
                           },
                         },
                       },
@@ -737,6 +741,139 @@ export function buildOpenApi() {
             401: R[401],
             403: R[403],
             404: errorResponse('No such department', 'NOT_FOUND', 'Department not found'),
+          },
+        },
+      },
+      '/admin/clients/{id}/impact': {
+        get: {
+          tags: ['Admin'],
+          summary: 'What deleting a department would hide (ADMIN)',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            200: {
+              description: 'Live question count, how many are pending review, users with access',
+              content: json({
+                type: 'object',
+                properties: {
+                  questions: { type: 'integer' },
+                  pending: { type: 'integer' },
+                  users: { type: 'integer' },
+                },
+              }),
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such department', 'NOT_FOUND', 'Department not found'),
+          },
+        },
+      },
+      '/admin/clients/{id}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore a deleted department (ADMIN)',
+          description: 'Its questions and grants come back exactly as they were.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            200: {
+              description: 'Restored',
+              content: json({ type: 'object', properties: { client: ref('Department') } }),
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('Not deleted', 'NOT_FOUND', 'Deleted department not found'),
+          },
+        },
+      },
+      '/admin/deleted-questions': {
+        get: {
+          tags: ['Admin'],
+          summary: 'Soft-deleted questions, newest deletion first (ADMIN)',
+          security: secured,
+          responses: {
+            200: {
+              description: 'Up to 100 questions',
+              content: json({
+                type: 'object',
+                properties: { items: { type: 'array', items: { type: 'object' } } },
+              }),
+            },
+            401: R[401],
+            403: R[403],
+          },
+        },
+      },
+      '/admin/questions/{id}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore a deleted question (ADMIN)',
+          description: "Refused with 409 while the question's department is itself deleted.",
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Restored' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('Not deleted', 'NOT_FOUND', 'Deleted question not found'),
+            409: errorResponse(
+              'Department deleted',
+              'DEPARTMENT_DELETED',
+              'Restore the Acme department first',
+            ),
+          },
+        },
+      },
+      '/admin/technologies': {
+        get: {
+          tags: ['Admin'],
+          summary: 'Technologies with usage counts and retired flag (ADMIN)',
+          security: secured,
+          responses: {
+            200: {
+              description: 'All technologies, alphabetical',
+              content: json({
+                type: 'object',
+                properties: { items: { type: 'array', items: { type: 'object' } } },
+              }),
+            },
+            401: R[401],
+            403: R[403],
+          },
+        },
+      },
+      '/admin/technologies/{id}/retire': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Retire a technology (ADMIN)',
+          description:
+            'Hidden from pickers and filters and cannot be added to questions; stays on questions that already have it.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Retired' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such technology', 'NOT_FOUND', 'Technology not found'),
+          },
+        },
+      },
+      '/admin/technologies/{id}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore a retired technology (ADMIN)',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Restored' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('Not retired', 'NOT_FOUND', 'Retired technology not found'),
           },
         },
       },

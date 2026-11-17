@@ -22,13 +22,18 @@ export function tagRoutes(db: Db, config: Config) {
       const usedIds = await departmentTagIds(db, req.user!);
       for (const c of categories) {
         if (c.slug === 'technology') c.tags = c.tags.filter((t) => usedIds.has(t.id));
+        c.tags = c.tags.filter((t) => !t.retiredAt); // retired tags are not offered as filters
       }
     }
     res.json({
       categories: categories.map((c) => ({
         slug: c.slug,
         name: c.name,
-        tags: c.tags.map((t) => ({ value: t.value, label: t.label })),
+        tags: c.tags.map((t) => ({
+          value: t.value,
+          label: t.label,
+          retired: t.retiredAt !== null,
+        })),
       })),
     });
   });

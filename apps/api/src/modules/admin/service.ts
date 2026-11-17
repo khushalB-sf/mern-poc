@@ -7,6 +7,12 @@ import { AppError, badRequest, forbidden, notFound } from '../../http/errors.js'
 import { recordAudit } from '../audit/audit.repo.js';
 import { hashPassword } from '../auth/password.js';
 import type { AuthUser } from '../../types/express.js';
+import {
+  departmentImpact,
+  listDeletedQuestions,
+  restoreQuestion,
+  tagUsageCounts,
+} from '../questions/question.repo.js';
 
 // Everything here ignores soft-deleted users and departments, so a deleted record behaves like a missing one.
 const userSelect = {
@@ -242,13 +248,93 @@ const toDepartment = (c: Prisma.ClientGetPayload<{ select: typeof clientSelect }
   userCount: c._count.grants,
 });
 
-export async function listClients(db: Db) {
+export async function listClients(db: Db, { deleted = false } = {}) {
   const rows = await db.client.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: deleted ? { not: null } : null },
     orderBy: { name: 'asc' },
     select: clientSelect,
   });
   return rows.map(toDepartment);
+}
+
+/** What deleting this department would hide, for the confirmation dialog. */
+export async function clientImpact(db: Db, id: string) {
+  const current = await db.client.findFirst({
+    where: { id, deletedAt: null },
+    select: clientSelect,
+  });
+  if (!current) throw notFound('Department not found');
+  return { ...(await departmentImpact(db, id)), users: toDepartment(current).userCount };
+}
+
+/** Undoes deleteClient: the department, its grants and all its questions come back as they were. */
+export async function restoreClient(db: Db, log: Logger, actor: AuthUser, id: string) {
+  return db.$transaction(async (tx) => {
+    const current = await tx.client.findFirst({ where: { id, deletedAt: { not: null } } });
+    if (!current) throw notFound('Deleted department not found');
+    await tx.client.update({ where: { id }, data: { deletedAt: null } });
+    await recordAudit(tx, log, {
+      type: 'CLIENT_RESTORED',
+      actorId: actor.id,
+      payload: { clientId: id, name: current.name },
+    });
+    return toDepartment(await tx.client.findUniqueOrThrow({ where: { id }, select: clientSelect }));
+  });
+}
+
+export const listDeletedQuestionsForAdmin = (db: Db) => listDeletedQuestions(db);
+
+export async function restoreDeletedQuestion(db: Db, log: Logger, actor: AuthUser, id: string) {
+  await db.$transaction(async (tx) => {
+    const { text } = await restoreQuestion(tx, id);
+    await recordAudit(tx, log, {
+      type: 'QUESTION_RESTORED',
+      actorId: actor.id,
+      questionId: id,
+      payload: { text },
+    });
+  });
+}
+
+/** Technologies (the `technology` tag category) with how many live questions use each. */
+export async function listTechnologies(db: Db) {
+  const [tags, usage] = await Promise.all([
+    db.tag.findMany({
+      where: { category: { slug: 'technology' } },
+      orderBy: { label: 'asc' },
+      select: { id: true, value: true, label: true, retiredAt: true },
+    }),
+    tagUsageCounts(db),
+  ]);
+  return tags.map((t) => ({
+    id: t.id,
+    value: t.value,
+    label: t.label,
+    retired: t.retiredAt !== null,
+    questionCount: usage.get(t.id) ?? 0,
+  }));
+}
+
+/** Retire hides a technology from pickers and filters; it stays on the questions that already carry it. */
+export async function setTechnologyRetired(
+  db: Db,
+  log: Logger,
+  actor: AuthUser,
+  id: string,
+  retired: boolean,
+) {
+  await db.$transaction(async (tx) => {
+    const current = await tx.tag.findFirst({
+      where: { id, category: { slug: 'technology' }, retiredAt: retired ? null : { not: null } },
+    });
+    if (!current) throw notFound(retired ? 'Technology not found' : 'Retired technology not found');
+    await tx.tag.update({ where: { id }, data: { retiredAt: retired ? new Date() : null } });
+    await recordAudit(tx, log, {
+      type: retired ? 'TAG_RETIRED' : 'TAG_RESTORED',
+      actorId: actor.id,
+      payload: { tagId: id, label: current.label },
+    });
+  });
 }
 
 export async function createClient(

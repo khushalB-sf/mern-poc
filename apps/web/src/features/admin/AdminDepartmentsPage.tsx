@@ -16,7 +16,10 @@ import { Page, PageHeader } from '../../shared/ui/Page';
 import {
   useAdminDepartments,
   useCreateDepartment,
+  useDeletedDepartments,
   useDeleteDepartment,
+  useDepartmentImpact,
+  useRestoreDepartment,
   useUpdateDepartment,
 } from './hooks';
 
@@ -100,6 +103,52 @@ function EditDialog({ department, onClose }: { department: Department; onClose: 
   );
 }
 
+function DeletedDepartments() {
+  const deleted = useDeletedDepartments();
+  const restore = useRestoreDepartment();
+  const toast = useToast();
+  if (!deleted.data || deleted.data.length === 0) return null;
+  return (
+    <section aria-labelledby="deleted-departments" className="mt-10">
+      <h2 id="deleted-departments" className="font-serif text-xl font-semibold">
+        Deleted departments
+      </h2>
+      <p className="mt-1 text-sm text-ink-soft">
+        Their questions are hidden from everyone. Restoring a department brings them back exactly as
+        they were.
+      </p>
+      {restore.isError && (
+        <p role="alert" className="mt-3 text-sm font-medium text-danger">
+          {(restore.error as Error).message}
+        </p>
+      )}
+      <ul
+        aria-label="Deleted departments"
+        className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
+      >
+        {deleted.data.map((d) => (
+          <li key={d.id} className="flex items-center justify-between gap-3 p-4">
+            <div className="min-w-0">
+              <p className="font-medium">{d.name}</p>
+              {d.description && <p className="text-sm text-ink-soft">{d.description}</p>}
+            </div>
+            <Button
+              size="sm"
+              loading={restore.isPending && restore.variables === d.id}
+              aria-label={`Restore ${d.name}`}
+              onClick={() =>
+                restore.mutate(d.id, { onSuccess: () => toast(`Restored department ${d.name}`) })
+              }
+            >
+              Restore
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function AdminDepartmentsPage() {
   useDocumentTitle('Departments');
   const departments = useAdminDepartments();
@@ -108,6 +157,7 @@ export function AdminDepartmentsPage() {
   const toast = useToast();
   const [editing, setEditing] = useState<Department | null>(null);
   const [deleting, setDeleting] = useState<Department | null>(null);
+  const impact = useDepartmentImpact(deleting?.id ?? null);
   const {
     register,
     handleSubmit,
@@ -207,6 +257,8 @@ export function AdminDepartmentsPage() {
         </div>
       </div>
 
+      <DeletedDepartments />
+
       {editing && <EditDialog department={editing} onClose={() => setEditing(null)} />}
 
       <ConfirmDialog
@@ -230,8 +282,17 @@ export function AdminDepartmentsPage() {
         }
       >
         <p>
-          The department disappears from filters, forms and grants, and its questions will be hidden
-          with it. Nothing is erased, so the history is kept.
+          The department disappears from filters, forms and grants.{' '}
+          {impact.data ? (
+            <>
+              Its {plural(impact.data.questions, 'question')}
+              {impact.data.pending > 0 && ` (${impact.data.pending} awaiting review)`} will be
+              hidden from everyone, and {plural(impact.data.users, 'user')} lose access.
+            </>
+          ) : (
+            'Its questions will be hidden from everyone.'
+          )}{' '}
+          Nothing is erased: you can restore it later from this page.
         </p>
       </ConfirmDialog>
     </Page>

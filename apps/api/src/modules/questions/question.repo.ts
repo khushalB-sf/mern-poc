@@ -9,6 +9,7 @@
 import { Prisma } from '../../generated/prisma/client.js';
 import type { QuestionStatus, Role } from '../../generated/prisma/enums.js';
 import type { Db, Queryable } from '../../db/prisma.js';
+import { AppError, notFound } from '../../http/errors.js';
 
 export interface Actor {
   id: string;
@@ -326,4 +327,71 @@ export async function departmentTagIds(db: Queryable, actor: Actor): Promise<Set
   let rows = await ofQuestions(inDepartment);
   if (rows.length === 0) rows = await ofQuestions(Prisma.sql`q.client_id IS NULL`);
   return new Set(rows.map((r) => r.id));
+}
+
+/** Admin only. Soft-deleted questions, newest deletion first, flagged when their department is also deleted. */
+export async function listDeletedQuestions(db: Queryable, limit = 100) {
+  const rows = await db.question.findMany({
+    where: { deletedAt: { not: null } },
+    orderBy: [{ deletedAt: 'desc' }, { id: 'asc' }],
+    take: limit,
+    select: {
+      id: true,
+      text: true,
+      status: true,
+      deletedAt: true,
+      author: { select: { id: true, name: true } },
+      client: { select: { id: true, name: true, deletedAt: true } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    text: r.text,
+    status: r.status,
+    deletedAt: r.deletedAt!,
+    author: r.author,
+    department: r.client ? { id: r.client.id, name: r.client.name } : null,
+    // Still hidden after a restore until its department is restored too.
+    departmentDeleted: r.client?.deletedAt != null,
+  }));
+}
+
+/** Admin only. Undoes softDeleteQuestion; refused while the question's department is deleted. */
+export async function restoreQuestion(db: Queryable, id: string) {
+  const row = await db.question.findFirst({
+    where: { id, deletedAt: { not: null } },
+    select: { text: true, client: { select: { name: true, deletedAt: true } } },
+  });
+  if (!row) throw notFound('Deleted question not found');
+  if (row.client?.deletedAt) {
+    throw new AppError(
+      409,
+      'DEPARTMENT_DELETED',
+      `Restore the ${row.client.name} department first`,
+    );
+  }
+  await db.question.update({ where: { id }, data: { deletedAt: null } });
+  return { text: row.text };
+}
+
+/** What deleting a department hides: its live questions (and how many still await review). */
+export async function departmentImpact(db: Queryable, clientId: string) {
+  const live = { clientId, deletedAt: null };
+  const [questions, pending] = await Promise.all([
+    db.question.count({ where: live }),
+    db.question.count({ where: { ...live, status: 'PENDING' } }),
+  ]);
+  return { questions, pending };
+}
+
+/** Number of live questions per tag; questions of a deleted department are hidden, so not counted. */
+export async function tagUsageCounts(db: Queryable): Promise<Map<string, number>> {
+  const rows = await db.questionTag.groupBy({
+    by: ['tagId'],
+    where: {
+      question: { deletedAt: null, OR: [{ clientId: null }, { client: { deletedAt: null } }] },
+    },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((r) => [r.tagId, r._count._all]));
 }

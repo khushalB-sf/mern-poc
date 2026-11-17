@@ -153,7 +153,7 @@ erDiagram
   question ||--o{ audit_event : traced
 ```
 
-**Constraints:** `tag UNIQUE(category_id, value)`; `question.text` CHECK non-blank; **no unique on text** (ADR-007); FKs `ON DELETE RESTRICT` (no deletes in scope).
+**Constraints:** `tag UNIQUE(category_id, value)`; `question.text` CHECK non-blank; **no unique on text** (ADR-007); FKs `ON DELETE RESTRICT`; deletes are soft (`deleted_at` on user, client, question) and technologies are retired (`tag.retired_at`), all reversible by an admin.
 
 **Indexes (each justified; re-justified by EXPLAIN in T-20):**
 

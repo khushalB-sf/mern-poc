@@ -60,6 +60,13 @@ const PATHS = {
       <path d="M3 13h5l1 3h6l1-3h5" />
     </>
   ),
+  tag: (
+    <>
+      <path d="M3 12V4h8l9 9-8 8-9-9Z" />
+      <circle cx="7.5" cy="8.5" r="1" />
+    </>
+  ),
+  trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
   shield: <path d="M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6l-8-3zM9 12l2 2 4-4" />,
   clock: (
     <>

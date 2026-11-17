@@ -5,12 +5,18 @@ import type { Db } from '../../db/prisma.js';
 import { validateBody, validateParams } from '../../http/validate.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import {
+  clientImpact,
   createClient,
   createUser,
   deleteClient,
   deleteUser,
   listClients,
+  listDeletedQuestionsForAdmin,
+  listTechnologies,
   listUsers,
+  restoreClient,
+  restoreDeletedQuestion,
+  setTechnologyRetired,
   setUserClients,
   updateClient,
   updateUser,
@@ -93,8 +99,18 @@ export function adminRoutes(db: Db, config: Config) {
     },
   );
 
-  router.get('/clients', async (_req, res) => {
-    res.json({ items: await listClients(db) });
+  router.get('/clients', async (req, res) => {
+    res.json({ items: await listClients(db, { deleted: req.query.deleted === 'true' }) });
+  });
+
+  router.get('/clients/:id/impact', validateParams(idParams), async (_req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    res.json(await clientImpact(db, id));
+  });
+
+  router.post('/clients/:id/restore', validateParams(idParams), async (req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    res.json({ client: await restoreClient(db, req.log, req.user!, id) });
   });
 
   router.post('/clients', validateBody(createClientSchema), async (req, res) => {
@@ -116,6 +132,31 @@ export function adminRoutes(db: Db, config: Config) {
     await deleteClient(db, req.log, req.user!, id);
     res.status(204).end();
   });
+
+  router.get('/deleted-questions', async (_req, res) => {
+    res.json({ items: await listDeletedQuestionsForAdmin(db) });
+  });
+
+  router.post('/questions/:id/restore', validateParams(idParams), async (req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    await restoreDeletedQuestion(db, req.log, req.user!, id);
+    res.status(204).end();
+  });
+
+  router.get('/technologies', async (_req, res) => {
+    res.json({ items: await listTechnologies(db) });
+  });
+
+  for (const [action, retired] of [
+    ['retire', true],
+    ['restore', false],
+  ] as const) {
+    router.post(`/technologies/:id/${action}`, validateParams(idParams), async (req, res) => {
+      const { id } = res.locals.params as z.infer<typeof idParams>;
+      await setTechnologyRetired(db, req.log, req.user!, id, retired);
+      res.status(204).end();
+    });
+  }
 
   return router;
 }

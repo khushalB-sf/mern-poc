@@ -36,6 +36,10 @@ enum AuditType {
   CLIENT_CREATED
   CLIENT_UPDATED
   CLIENT_DELETED
+  CLIENT_RESTORED
+  QUESTION_RESTORED
+  TAG_RETIRED
+  TAG_RESTORED
 }
 
 model AppUser {
@@ -93,6 +97,8 @@ model Tag {
   categoryId String        @map("category_id") @db.Uuid
   value      String
   label      String
+  // Retired: hidden from pickers and filters and not attachable to new questions, but kept on existing ones.
+  retiredAt  DateTime?     @map("retired_at") @db.Timestamptz()
   category   TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   questions  QuestionTag[]
 

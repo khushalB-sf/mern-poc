@@ -1,5 +1,12 @@
 import { apiFetch } from '../../shared/api/client';
-import type { AdminUser, Department, Role } from '../../shared/api/types';
+import type {
+  AdminUser,
+  DeletedQuestion,
+  Department,
+  DepartmentImpact,
+  Role,
+  Technology,
+} from '../../shared/api/types';
 
 export const listAdminUsers = (signal?: AbortSignal) =>
   apiFetch<{ items: AdminUser[] }>('/admin/users', { signal }).then((r) => r.items);
@@ -58,3 +65,28 @@ export const updateDepartment = (id: string, body: Partial<DepartmentInput>) =>
 
 export const deleteDepartment = (id: string) =>
   apiFetch<void>(`/admin/clients/${id}`, { method: 'DELETE' });
+
+export const listDeletedDepartments = (signal?: AbortSignal) =>
+  apiFetch<{ items: Department[] }>('/admin/clients?deleted=true', { signal }).then((r) => r.items);
+
+export const getDepartmentImpact = (id: string, signal?: AbortSignal) =>
+  apiFetch<DepartmentImpact>(`/admin/clients/${id}/impact`, { signal });
+
+export const restoreDepartment = (id: string) =>
+  apiFetch<{ client: Department }>(`/admin/clients/${id}/restore`, { method: 'POST' });
+
+export const listDeletedQuestions = (signal?: AbortSignal) =>
+  apiFetch<{ items: DeletedQuestion[] }>('/admin/deleted-questions', { signal }).then(
+    (r) => r.items,
+  );
+
+export const restoreQuestion = (id: string) =>
+  apiFetch<void>(`/admin/questions/${id}/restore`, { method: 'POST' });
+
+export const listTechnologies = (signal?: AbortSignal) =>
+  apiFetch<{ items: Technology[] }>('/admin/technologies', { signal }).then((r) => r.items);
+
+export const setTechnologyRetired = ({ id, retired }: { id: string; retired: boolean }) =>
+  apiFetch<void>(`/admin/technologies/${id}/${retired ? 'retire' : 'restore'}`, {
+    method: 'POST',
+  });

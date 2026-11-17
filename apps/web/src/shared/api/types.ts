@@ -35,7 +35,7 @@ export interface QuestionPage {
 export interface TagCategory {
   slug: string;
   name: string;
-  tags: { value: string; label: string }[];
+  tags: { value: string; label: string; retired?: boolean }[];
 }
 
 export interface Client {
@@ -76,4 +76,29 @@ export interface DuplicateMatch {
   id: string;
   text: string;
   similarity: number;
+}
+
+export interface DepartmentImpact {
+  questions: number;
+  pending: number;
+  users: number;
+}
+
+export interface DeletedQuestion {
+  id: string;
+  text: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  deletedAt: string;
+  author: { id: string; name: string };
+  department: Client | null;
+  /** Restoring is blocked until the department is restored. */
+  departmentDeleted: boolean;
+}
+
+export interface Technology {
+  id: string;
+  value: string;
+  label: string;
+  retired: boolean;
+  questionCount: number;
 }

@@ -173,4 +173,11 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['post', '/api/admin/clients'],
   ['patch', `/api/admin/clients/${UUID}`],
   ['delete', `/api/admin/clients/${UUID}`],
+  ['get', `/api/admin/clients/${UUID}/impact`],
+  ['post', `/api/admin/clients/${UUID}/restore`],
+  ['get', '/api/admin/deleted-questions'],
+  ['post', `/api/admin/questions/${UUID}/restore`],
+  ['get', '/api/admin/technologies'],
+  ['post', `/api/admin/technologies/${UUID}/retire`],
+  ['post', `/api/admin/technologies/${UUID}/restore`],
 ];

@@ -55,7 +55,26 @@ export async function resolveTagGroups(db: Queryable, tags: string[]): Promise<s
   return groups;
 }
 
-/** Flat, de-duplicated tag ids for writes (same validation as filters: unknown tags are a 400). */
-export async function resolveTagIds(db: Queryable, tags: string[]): Promise<string[]> {
-  return [...new Set((await resolveTagGroups(db, tags)).flat())];
+/**
+ * Flat, de-duplicated tag ids for writes (same validation as filters: unknown tags are a 400).
+ * A retired tag cannot be newly attached; `alreadyOn` lists the "category:value" tags the question
+ * already carries, which stay allowed so an edit does not fail on a tag retired after the fact.
+ */
+export async function resolveTagIds(
+  db: Queryable,
+  tags: string[],
+  alreadyOn: string[] = [],
+): Promise<string[]> {
+  const ids = [...new Set((await resolveTagGroups(db, tags)).flat())];
+  const retired = await db.tag.findMany({
+    where: { id: { in: ids }, retiredAt: { not: null } },
+    select: { value: true, category: { select: { slug: true } } },
+  });
+  const added = retired
+    .map((t) => `${t.category.slug}:${t.value}`)
+    .filter((t) => !alreadyOn.includes(t));
+  if (added.length > 0) {
+    throw new AppError(400, 'TAG_RETIRED', `Tag no longer available: ${added.join(', ')}`);
+  }
+  return ids;
 }

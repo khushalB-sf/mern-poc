@@ -123,7 +123,7 @@ export async function updateQuestion(
     }
     let tagIds: string[] | undefined;
     if (patch.tags !== undefined) {
-      tagIds = await resolveTagIds(tx, patch.tags);
+      tagIds = await resolveTagIds(tx, patch.tags, tagKeys(current));
       const next = [...new Set(patch.tags)].sort();
       if (next.join() !== tagKeys(current).join()) {
         changes.tags = { from: tagKeys(current), to: next };

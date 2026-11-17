@@ -45,6 +45,13 @@ describe('admin gate on the new routes', () => {
     ['delete', `/users/${UUID}`, {}],
     ['patch', `/clients/${UUID}`, { name: 'x' }],
     ['delete', `/clients/${UUID}`, {}],
+    ['get', `/clients/${UUID}/impact`, {}],
+    ['post', `/clients/${UUID}/restore`, {}],
+    ['get', '/deleted-questions', {}],
+    ['post', `/questions/${UUID}/restore`, {}],
+    ['get', '/technologies', {}],
+    ['post', `/technologies/${UUID}/retire`, {}],
+    ['post', `/technologies/${UUID}/restore`, {}],
   ];
   it.each(routes)('%s %s is ADMIN-only', async (method, path, body) => {
     for (const u of [world.users.plain, world.users.authorA, world.users.reviewer]) {
@@ -371,5 +378,113 @@ describe('admin manages questions', () => {
       text: 'Original question about Kafka',
     });
     expect(res.status).toBe(201);
+  });
+});
+
+describe('restore: departments, questions and technologies', () => {
+  const ids = (res: { body: { items: { id: string }[] } }) => res.body.items.map((i) => i.id);
+
+  it('a deleted department is listed, its questions stay hidden, and restore brings them back unchanged', async () => {
+    const q = await addQuestion(db, world, {
+      text: 'Acme only question',
+      authorId: world.users.authorAcme.id,
+      clientId: world.acme.id,
+      status: 'PENDING',
+    });
+    const impact = await adminCall('get', `/clients/${world.acme.id}/impact`);
+    expect(impact.body).toMatchObject({ questions: 1, pending: 1 });
+
+    await adminCall('delete', `/clients/${world.acme.id}`);
+    expect(ids(await adminCall('get', '/clients'))).not.toContain(world.acme.id);
+    expect(ids(await adminCall('get', '/clients?deleted=true'))).toEqual([world.acme.id]);
+    expect((await call(admin(), 'get', `/api/questions/${q.id}`)).status).toBe(404);
+
+    expect((await adminCall('post', `/clients/${world.acme.id}/restore`)).status).toBe(200);
+    const back = await call(admin(), 'get', `/api/questions/${q.id}`);
+    expect(back.status).toBe(200);
+    expect(back.body.question.status).toBe('PENDING');
+    expect((await adminCall('post', `/clients/${world.acme.id}/restore`)).status).toBe(404);
+    expect(await db.auditEvent.count({ where: { type: 'CLIENT_RESTORED' } })).toBe(1);
+  });
+
+  it('a deleted question is listed and restorable, but not while its department is deleted', async () => {
+    const q = await addQuestion(db, world, {
+      text: 'Gone then back',
+      authorId: world.users.authorAcme.id,
+      clientId: world.acme.id,
+    });
+    await call(admin(), 'delete', `/api/questions/${q.id}`);
+    const listed = await adminCall('get', '/deleted-questions');
+    expect(listed.body.items).toMatchObject([
+      { id: q.id, department: { name: 'Acme' }, departmentDeleted: false },
+    ]);
+
+    await adminCall('delete', `/clients/${world.acme.id}`);
+    expect((await adminCall('get', '/deleted-questions')).body.items[0].departmentDeleted).toBe(
+      true,
+    );
+    const blocked = await adminCall('post', `/questions/${q.id}/restore`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.code).toBe('DEPARTMENT_DELETED');
+
+    await adminCall('post', `/clients/${world.acme.id}/restore`);
+    expect((await adminCall('post', `/questions/${q.id}/restore`)).status).toBe(204);
+    expect((await call(admin(), 'get', `/api/questions/${q.id}`)).status).toBe(200);
+    expect((await adminCall('post', `/questions/${q.id}/restore`)).status).toBe(404);
+    expect(
+      await db.auditEvent.count({ where: { type: 'QUESTION_RESTORED', questionId: q.id } }),
+    ).toBe(1);
+  });
+
+  it('retiring a technology hides it from filters and new questions but keeps it on existing ones', async () => {
+    const q = await addQuestion(db, world, {
+      text: 'Uses react',
+      authorId: world.users.authorAcme.id,
+      clientId: world.acme.id,
+      tags: ['technology:react'],
+    });
+    const react = world.tags.get('technology:react')!;
+    const list = await adminCall('get', '/technologies');
+    expect(list.body.items.find((t: { id: string }) => t.id === react)).toMatchObject({
+      retired: false,
+      questionCount: 1,
+    });
+
+    expect((await adminCall('post', `/technologies/${react}/retire`)).status).toBe(204);
+    expect((await adminCall('post', `/technologies/${react}/retire`)).status).toBe(404);
+
+    const techValues = async (query: string) =>
+      (await call(world.users.authorAcme, 'get', `/api/tags${query}`)).body.categories
+        .find((c: { slug: string }) => c.slug === 'technology')
+        .tags.map((t: { value: string; retired: boolean }) => `${t.value}:${t.retired}`);
+    expect(await techValues('')).toContain('react:true');
+    expect(await techValues('?for=filter')).not.toContain('react:true');
+
+    // still on the existing question, and an edit that keeps it is fine
+    const detail = await call(admin(), 'get', `/api/questions/${q.id}`);
+    expect(detail.body.question.tags.map((t: { value: string }) => t.value)).toContain('react');
+    expect(
+      (await call(admin(), 'patch', `/api/questions/${q.id}`, { tags: ['technology:react'] }))
+        .status,
+    ).toBe(200);
+    // but nobody can newly attach it
+    const attach = await call(world.users.authorAcme, 'post', '/api/questions', {
+      text: 'Brand new react question',
+      clientId: world.acme.id,
+      tags: ['technology:react'],
+    });
+    expect(attach.status).toBe(400);
+    expect(attach.body.error.code).toBe('TAG_RETIRED');
+
+    expect((await adminCall('post', `/technologies/${react}/restore`)).status).toBe(204);
+    expect(await techValues('?for=filter')).toContain('react:false');
+    expect(
+      await db.auditEvent.count({ where: { type: { in: ['TAG_RETIRED', 'TAG_RESTORED'] } } }),
+    ).toBe(2);
+  });
+
+  it('only technologies can be retired (not seniority or type tags)', async () => {
+    const mid = world.tags.get('seniority:mid')!;
+    expect((await adminCall('post', `/technologies/${mid}/retire`)).status).toBe(404);
   });
 });
