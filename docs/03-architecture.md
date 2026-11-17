@@ -12,7 +12,7 @@ flowchart LR
   A -->|JSON logs| L[stdout / docker logs]
 ```
 
-Data flow: the browser only ever talks to nginx. Cookies are therefore first-party and `SameSite=Strict` works; no CORS is configured. nginx forwards `/api/*` to the `api` container by service name. The API sets `trust proxy` so rate limiting keys on the real client IP from `X-Forwarded-For`, not nginx's.
+Data flow: the browser only ever talks to nginx. Cookies are therefore first-party and `SameSite=Strict` works; no CORS is configured. nginx forwards `/api/*` to the `api` container by service name. The API trusts `X-Forwarded-For` only for the number of proxy hops in `TRUST_PROXY` (Compose sets 1 for nginx; the default is 0), so rate limiting keys on the real client IP and a client reaching the API directly cannot choose its own key.
 
 ## 2. Backend layout (`apps/api/src`)
 

@@ -17,8 +17,8 @@ const isUnique = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
 
 /** "Node.js", "node-js" and "nodejs" are the same technology. */
-const keyOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-const slugOf = (s: string) =>
+export const keyOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+export const slugOf = (s: string) =>
   s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

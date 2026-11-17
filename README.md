@@ -102,6 +102,8 @@ The API reads the repo-root `.env`. Its `DATABASE_URL` points at `localhost:5436
 | api         | 4000      | `API_HOST_PORT`      |
 | database    | 5436      | `POSTGRES_HOST_PORT` |
 
+The API and database ports are published on `127.0.0.1` only; the web port is the one public entry point.
+
 If a port is taken (`port is already allocated`), change it in `.env` and run `docker compose up -d` again. The database default is 5436 because 5432 to 5435 were already in use on the development machine. If you change `POSTGRES_HOST_PORT`, update the port in `DATABASE_URL` too (that URL is used by Options 2 and 3 only).
 
 ## Tests
@@ -110,10 +112,11 @@ If a port is taken (`port is already allocated`), change it in `.env` and run `d
 docker compose up -d db              # the API tests need Postgres
 npm test -w @qb/api                  # creates and migrates its own qb_test database
 npm test -w @qb/web
+npm run test:cov -w @qb/api          # coverage report (also: -w @qb/web)
 npm run lint && npm run typecheck
 ```
 
-The API tests run against a real database (no mocks). The most important ones are in `apps/api/test/visibility.test.ts` (client restriction cannot be detected through search, filters, paging or by ID) and `apps/api/test/questions.write.test.ts` (who may add and edit, including direct-by-ID attempts).
+The security attack suites (`security.*.test.ts`) try to break authentication, access control, input handling and HTTP headers; see [docs/06-security-review.md](docs/06-security-review.md) for the findings and recommendations. The API tests run against a real database (no mocks). The most important ones are in `apps/api/test/visibility.test.ts` (client restriction cannot be detected through search, filters, paging or by ID) and `apps/api/test/questions.write.test.ts` (who may add and edit, including direct-by-ID attempts).
 
 ## Everyday commands
 
@@ -131,14 +134,16 @@ The full command reference, with expected output, is in [docs/docker.md](docs/do
 
 Everything is in `.env` (copy of `.env.example`). Notable settings:
 
-| Setting                                   | Meaning                                                                                                                                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing secrets. The defaults are dev-only placeholders; replace them (`openssl rand -base64 48`) for anything shared. The API refuses the placeholders when `COOKIE_SECURE=true`. |
-| `COOKIE_SECURE`                           | `true` only when served over https. Safari drops secure cookies on plain `http://localhost`.                                                                                             |
-| `SEED_ON_START`                           | Seed demo data on start when the database is empty.                                                                                                                                      |
-| `ALLOWED_ORIGINS`                         | Origins allowed to make state-changing requests (CSRF check). Same-origin requests are always allowed.                                                                                   |
-| `DOCS_ENABLED`                            | Serves Swagger UI at `/api/docs`.                                                                                                                                                        |
-| `VITE_SHOW_DEMO_ACCOUNTS`                 | Shows the Demo accounts panel on the login page; clicking one fills in the email **and the demo password** (which is therefore in the web bundle). Set `false` for real deployments.     |
+| Setting                                                   | Meaning                                                                                                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`                 | Token signing secrets. The defaults are dev-only placeholders; replace them (`openssl rand -base64 48`) for anything shared. The API refuses the placeholders when `COOKIE_SECURE=true`. |
+| `COOKIE_SECURE`                                           | `true` only when served over https. Safari drops secure cookies on plain `http://localhost`.                                                                                             |
+| `SEED_ON_START`                                           | Seed demo data on start when the database is empty.                                                                                                                                      |
+| `ALLOWED_ORIGINS`                                         | Origins allowed to make state-changing requests (CSRF check). Same-origin requests are always allowed.                                                                                   |
+| `DOCS_ENABLED`                                            | Serves Swagger UI at `/api/docs`. Off by default in production; `.env.example` sets it to `true` for the local demo.                                                                     |
+| `TRUST_PROXY`                                             | Number of reverse proxies whose `X-Forwarded-For` is trusted (default `0`; Compose sets `1` for nginx). Only above 0 if clients cannot reach the API port directly.                      |
+| `RATE_LIMIT_LOGIN_PER_MIN`, `RATE_LIMIT_LOGIN_IP_PER_MIN` | Failed-login limits per IP and email (5) and per IP across all emails (30).                                                                                                              |
+| `VITE_SHOW_DEMO_ACCOUNTS`                                 | Shows the Demo accounts panel on the login page; clicking one fills in the email **and the demo password** (which is therefore in the web bundle). Set `false` for real deployments.     |
 
 ## Troubleshooting
 

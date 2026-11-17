@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { Config } from '../../config/env.js';
@@ -18,6 +18,12 @@ export function authRoutes(db: Db, config: Config) {
   const router = Router();
   const service = createAuthService(db, config);
 
+  const tooMany: RequestHandler = (_req, res) => {
+    res
+      .status(429)
+      .json({ error: { code: 'RATE_LIMITED', message: 'Too many attempts, try again later' } });
+  };
+
   // ponytail: in-memory store, so limits are per process. Use a shared store (Redis) if the API scales out.
   const loginLimiter = rateLimit({
     windowMs: 60_000,
@@ -25,14 +31,20 @@ export function authRoutes(db: Db, config: Config) {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? '')}|${req.body?.email ?? ''}`,
-    handler: (_req, res) => {
-      res
-        .status(429)
-        .json({ error: { code: 'RATE_LIMITED', message: 'Too many attempts, try again later' } });
-    },
+    handler: tooMany,
   });
 
-  router.post('/login', validateBody(loginSchema), loginLimiter, async (req, res) => {
+  // Per IP regardless of email: the per-email limit alone is bypassed by trying a different email each time.
+  const ipLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: config.RATE_LIMIT_LOGIN_IP_PER_MIN,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
+    handler: tooMany,
+  });
+
+  router.post('/login', ipLimiter, validateBody(loginSchema), loginLimiter, async (req, res) => {
     const { user, access, refresh } = await service.login(req.body.email, req.body.password);
     setAuthCookies(res, config, access, refresh); // tokens travel only in cookies, never the body
     res.json({ user });

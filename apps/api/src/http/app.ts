@@ -13,6 +13,7 @@ import { questionRoutes } from '../modules/questions/routes.js';
 import { tagRoutes } from '../modules/tags/routes.js';
 import { docsRoutes } from '../docs/routes.js';
 import { originCheck } from './csrf.js';
+import { rejectNul } from './nul.js';
 import { errorHandler, notFoundHandler } from './errors.js';
 
 export interface AppDeps {
@@ -24,8 +25,10 @@ export interface AppDeps {
 export function createApp({ config, logger, db }: AppDeps): Express {
   const app = express();
 
-  // Behind nginx: take the client IP from X-Forwarded-For (one hop) so rate limits key on it.
-  app.set('trust proxy', 1);
+  // Take the client IP from X-Forwarded-For only for as many proxy hops as are configured. The default
+  // is none: trusting the header when the API is reachable directly lets a client pick its own
+  // rate-limit key. Docker sets 1 (nginx).
+  app.set('trust proxy', config.TRUST_PROXY);
 
   app.use(
     pinoHttp({
@@ -44,8 +47,17 @@ export function createApp({ config, logger, db }: AppDeps): Express {
     }),
   );
   app.use(helmet());
+  // Authenticated, per-user JSON must not be stored by browsers or shared caches (back button after
+  // logout, shared proxies). The Swagger page is static and left alone.
+  app.use('/api', (req, res, next) => {
+    if (!req.path.startsWith('/docs') && req.path !== '/openapi.json') {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+    next();
+  });
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
+  app.use(rejectNul);
   app.use(originCheck(config.ALLOWED_ORIGINS));
 
   const api = express.Router();

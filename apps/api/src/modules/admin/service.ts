@@ -118,6 +118,21 @@ export interface UserPatch {
   password?: string | undefined;
 }
 
+/**
+ * There must always be an active admin. Two admins demoting each other at the same moment would
+ * otherwise both pass their own check, so the active admins are locked (in id order, no deadlock)
+ * and the survivors counted inside the transaction.
+ */
+async function assertAnotherAdminRemains(tx: Queryable, leavingId: string) {
+  const admins = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM app_user
+    WHERE role = 'ADMIN' AND active AND deleted_at IS NULL
+    ORDER BY id FOR UPDATE`;
+  if (!admins.some((a) => a.id !== leavingId)) {
+    throw new AppError(409, 'LAST_ADMIN', 'There must be at least one active admin');
+  }
+}
+
 export async function updateUser(
   db: Db,
   log: Logger,
@@ -136,6 +151,11 @@ export async function updateUser(
     return await db.$transaction(async (tx) => {
       const current = await tx.appUser.findFirst({ where: { id, deletedAt: null } });
       if (!current) throw notFound('User not found');
+      const stopsBeingAdmin =
+        current.role === 'ADMIN' &&
+        current.active &&
+        ((patch.role !== undefined && patch.role !== 'ADMIN') || patch.active === false);
+      if (stopsBeingAdmin) await assertAnotherAdminRemains(tx, id);
 
       const data: Prisma.AppUserUpdateInput = {};
       const changed: Record<string, { from: InputJsonValue | null; to: InputJsonValue | null }> =
@@ -184,6 +204,7 @@ export async function deleteUser(db: Db, log: Logger, actor: AuthUser, id: strin
   await db.$transaction(async (tx) => {
     const current = await tx.appUser.findFirst({ where: { id, deletedAt: null } });
     if (!current) throw notFound('User not found');
+    if (current.role === 'ADMIN' && current.active) await assertAnotherAdminRemains(tx, id);
     await tx.appUser.update({ where: { id }, data: { deletedAt: new Date(), active: false } });
     await signOutEverywhere(tx, id);
     await recordAudit(tx, log, {

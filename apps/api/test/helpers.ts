@@ -17,6 +17,7 @@ export const testEnv = {
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   JWT_REFRESH_SECRET: 'b'.repeat(32),
   RATE_LIMIT_LOGIN_PER_MIN: '1000',
+  RATE_LIMIT_LOGIN_IP_PER_MIN: '100000',
 };
 
 export const testConfig = (over: Record<string, string> = {}): Config =>

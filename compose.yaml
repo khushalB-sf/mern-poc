@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - '${POSTGRES_HOST_PORT:-5436}:5432'
+      # Loopback only: the database is for local tooling, never for the network.
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5436}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,8 +34,13 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SEED_ON_START: ${SEED_ON_START:-false}
       SEED_PASSWORD: ${SEED_PASSWORD:-Passw0rd!demo}
+      # nginx is the one proxy in front of the API, so trust exactly one X-Forwarded-For hop.
+      TRUST_PROXY: 1
+      # Swagger is off unless asked for: set DOCS_ENABLED=true in .env for a local demo.
+      DOCS_ENABLED: ${DOCS_ENABLED:-false}
     ports:
-      - '${API_HOST_PORT:-4000}:4000'
+      # Loopback only: the browser reaches the API through nginx; direct access bypasses its limits.
+      - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
     healthcheck:
       test:
         [
