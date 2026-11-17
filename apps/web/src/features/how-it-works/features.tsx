@@ -150,7 +150,7 @@ export const FEATURES: Feature[] = [
         title: 'You type in the search box or tick a tag filter',
         detail:
           'The box waits 300 ms after you stop typing. The search and filters are then put in the page address, so a search can be bookmarked or shared.',
-        where: 'web · features/questions/QuestionListPage.tsx, FilterPanel.tsx',
+        where: 'web · features/questions/QuestionListPage.tsx, FilterBar.tsx',
       },
       {
         title: 'React asks the API for the list',

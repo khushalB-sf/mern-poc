@@ -4,20 +4,18 @@ import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { STATUS_LABEL, plural } from '../../shared/lib/format';
 import { Button, buttonClass } from '../../shared/ui/Button';
-import { Dialog } from '../../shared/ui/Dialog';
 import { Icon } from '../../shared/ui/Icon';
 import { Page, PageHeader } from '../../shared/ui/Page';
 import { cx } from '../../shared/ui/cx';
 import { EmptyState, ErrorState, ListSkeleton } from '../../shared/ui/states';
 import { canCreate, useMe } from '../auth/hooks';
-import { FilterPanel } from './components/FilterPanel';
+import { FilterBar } from './components/FilterBar';
 import { Pagination } from './components/Pagination';
 import { QuestionRow } from './components/QuestionRow';
 import { labelLookup } from './components/chips';
 import {
   EMPTY_FILTERS,
   PAGE_SIZE,
-  activeFilterCount,
   hasAnyFilter,
   parseFilters,
   toSearchParams,
@@ -59,7 +57,6 @@ export function QuestionListPage() {
   const tags = useTags();
   const clients = useClients();
   const tagLabel = useMemo(() => labelLookup(tags.data), [tags.data]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const goToPage = (page: number) => {
@@ -71,10 +68,9 @@ export function QuestionListPage() {
   const total = search.data?.page.total ?? 0;
   const items = search.data?.items ?? [];
   const refreshing = search.isFetching && !search.isPending; // showing stale results while loading new ones
-  const activeCount = activeFilterCount(filters);
 
-  const panel = (
-    <FilterPanel
+  const filterBar = (
+    <FilterBar
       categories={tags.data}
       clients={clients.data}
       tagsError={tags.isError}
@@ -152,25 +148,11 @@ export function QuestionListPage() {
             className="min-h-12 w-full rounded-xl border border-control bg-surface pl-11 pr-3 text-base shadow-sm transition-colors placeholder:text-ink-soft hover:border-ink-soft focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0"
           />
         </div>
-        <Button className="min-h-12 xl:hidden" onClick={() => setFiltersOpen(true)}>
-          <Icon name="filter" />
-          Filters
-          {activeCount > 0 && (
-            <span className="rounded-full bg-accent px-1.5 text-xs text-accent-ink">
-              {activeCount}
-              <span className="sr-only"> active</span>
-            </span>
-          )}
-        </Button>
       </form>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside aria-label="Filters" className="hidden xl:block">
-          <div className="sticky top-6 max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-sm">
-            {panel}
-          </div>
-        </aside>
+      <div className="mt-4">{filterBar}</div>
 
+      <div className="mt-5">
         <section aria-label="Results" aria-busy={search.isFetching} className="min-w-0">
           <div className="flex min-h-8 flex-wrap items-center gap-2">
             <p role="status" className="text-sm font-medium text-ink-soft">
@@ -243,16 +225,6 @@ export function QuestionListPage() {
           </div>
         </section>
       </div>
-
-      <Dialog open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filters">
-        {panel}
-        {/* Sticky so the way out is always visible, however long the filter list is. */}
-        <div className="sticky bottom-0 -mx-5 -mb-5 mt-6 border-t border-line bg-surface p-4 sm:-mx-6 sm:-mb-6">
-          <Button variant="primary" className="w-full" onClick={() => setFiltersOpen(false)}>
-            Show {search.data ? plural(total, 'question') : 'results'}
-          </Button>
-        </div>
-      </Dialog>
     </Page>
   );
 }
