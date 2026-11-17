@@ -70,38 +70,116 @@ export function LoginPage() {
   if (me) return <Navigate to={from} replace />;
 
   return (
-    <main id="main" className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)]">
-      <section className="flex flex-col justify-center bg-linear-to-br from-side-bg via-side-bg to-side-active px-6 py-8 text-side-ink sm:px-10 lg:px-16 lg:py-16">
+    <main
+      id="main"
+      className="grid min-h-dvh grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_26rem]"
+    >
+      <section className="order-last flex flex-col justify-center bg-linear-to-br from-side-bg via-side-bg to-side-active px-6 py-8 text-side-ink sm:px-10 lg:order-first lg:sticky lg:top-0 lg:h-dvh lg:overflow-hidden lg:px-10 lg:py-8">
         <div className="max-w-lg">
-          <span
-            aria-hidden="true"
-            className="mb-5 flex size-11 items-center justify-center rounded-xl bg-accent text-accent-ink"
-          >
-            <Icon name="list" className="size-5" />
-          </span>
           <h1 className="font-serif text-4xl font-semibold leading-tight lg:text-5xl">
             Question bank
           </h1>
           <p className="mt-3 text-lg text-side-soft">
             Sign in to find, add and review interview questions.
           </p>
-          <ul className="mt-10 hidden space-y-6 lg:block">
-            {PITCH.map((p) => (
-              <li key={p.title} className="flex gap-4">
-                <span
-                  aria-hidden="true"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-side-line bg-side-active/60 text-side-ink"
-                >
-                  <Icon name={p.icon} className="size-5" />
-                </span>
-                <div>
-                  <p className="font-medium">{p.title}</p>
-                  <p className="text-sm text-side-soft">{p.text}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {!SHOW_DEMO && (
+            <ul className="mt-10 hidden space-y-6 lg:block">
+              {PITCH.map((p) => (
+                <li key={p.title} className="flex gap-4">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-side-line bg-side-active/60 text-side-ink"
+                  >
+                    <Icon name={p.icon} className="size-5" />
+                  </span>
+                  <div>
+                    <p className="font-medium">{p.title}</p>
+                    <p className="text-sm text-side-soft">{p.text}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+
+        {SHOW_DEMO && (
+          <section
+            aria-labelledby="demo-heading"
+            className="mt-5 max-w-3xl rounded-2xl border border-side-line bg-side-active/40 p-4 sm:p-5"
+          >
+            <h2 id="demo-heading" className="font-medium">
+              Demo accounts
+            </h2>
+            <p className="mt-1 text-sm text-side-soft">
+              Choose one to fill in the email and password. A department grant adds that
+              department&apos;s questions on top of the global ones.
+            </p>
+            <div className="relative mt-3 max-h-96 min-h-40 overflow-auto lg:max-h-[calc(100dvh-24rem)]">
+              <table className="w-full text-[13px] leading-tight">
+                <caption className="sr-only">
+                  Demo accounts, their role and department grants
+                </caption>
+                <thead>
+                  <tr className="border-b border-side-line text-left text-side-soft">
+                    <th scope="col" className="sticky top-0 bg-side-bg px-2 py-1.5 font-medium">
+                      Account
+                    </th>
+                    <th scope="col" className="sticky top-0 bg-side-bg px-2 py-1.5 font-medium">
+                      Role
+                    </th>
+                    {['Global', ...DEMO_CLIENTS].map((c) => (
+                      <th
+                        key={c}
+                        scope="col"
+                        className="sticky top-0 bg-side-bg px-1 py-1 text-center font-medium"
+                      >
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {DEMO_ACCOUNTS.map((a) => (
+                    <tr key={a.email} className="border-b border-side-line last:border-b-0">
+                      <td className="p-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('email', a.email, { shouldValidate: true });
+                            setValue('password', DEMO_PASSWORD, { shouldValidate: true });
+                          }}
+                          className="w-full rounded-lg px-2 py-1 text-left hover:bg-side-active"
+                        >
+                          <span className="block font-medium whitespace-nowrap">{a.label}</span>
+                          <span className="text-side-soft">{a.email}</span>
+                        </button>
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap">{a.role}</td>
+                      {['Global', ...DEMO_CLIENTS].map((c) => {
+                        // Global questions need no grant: every account sees them.
+                        const granted =
+                          c === 'Global' ||
+                          a.seesAll ||
+                          (a.grants as readonly string[]).includes(c);
+                        return (
+                          <td key={c} className="px-1 py-1 text-center">
+                            <span
+                              aria-hidden="true"
+                              className={granted ? 'font-semibold' : 'text-side-soft'}
+                            >
+                              {granted ? '✓' : '–'}
+                            </span>
+                            <span className="sr-only">{granted ? 'Has access' : 'No access'}</span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </section>
 
       <div className="flex items-center justify-center px-5 py-10 sm:px-8">
@@ -159,82 +237,6 @@ export function LoginPage() {
               How access and permissions work
             </Link>
           </p>
-
-          {SHOW_DEMO && (
-            <details className="mt-8 rounded-xl border border-line bg-surface shadow-sm">
-              <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-                Demo accounts
-              </summary>
-              <div className="border-t border-line px-4 py-3">
-                <p className="mb-2 text-sm text-ink-soft">
-                  Choose one to fill in the email and password. A department grant adds that
-                  department&apos;s questions on top of the global ones.
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <caption className="sr-only">
-                      Demo accounts, their role and department grants
-                    </caption>
-                    <thead>
-                      <tr className="border-b border-line text-left text-ink-soft">
-                        <th scope="col" className="px-2 py-1.5 font-medium">
-                          Account
-                        </th>
-                        <th scope="col" className="px-2 py-1.5 font-medium">
-                          Role
-                        </th>
-                        {['Global', ...DEMO_CLIENTS].map((c) => (
-                          <th key={c} scope="col" className="px-2 py-1.5 text-center font-medium">
-                            {c}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {DEMO_ACCOUNTS.map((a) => (
-                        <tr key={a.email} className="border-b border-line last:border-b-0">
-                          <td className="p-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setValue('email', a.email, { shouldValidate: true });
-                                setValue('password', DEMO_PASSWORD, { shouldValidate: true });
-                              }}
-                              className="w-full rounded-lg px-2 py-2 text-left hover:bg-accent-soft"
-                            >
-                              <span className="block font-medium">{a.label}</span>
-                              <span className="text-ink-soft">{a.email}</span>
-                            </button>
-                          </td>
-                          <td className="px-2 py-2 whitespace-nowrap">{a.role}</td>
-                          {['Global', ...DEMO_CLIENTS].map((c) => {
-                            // Global questions need no grant: every account sees them.
-                            const granted =
-                              c === 'Global' ||
-                              a.seesAll ||
-                              (a.grants as readonly string[]).includes(c);
-                            return (
-                              <td key={c} className="px-2 py-2 text-center">
-                                <span
-                                  aria-hidden="true"
-                                  className={granted ? 'font-semibold' : 'text-ink-soft'}
-                                >
-                                  {granted ? '✓' : '–'}
-                                </span>
-                                <span className="sr-only">
-                                  {granted ? 'Has access' : 'No access'}
-                                </span>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </details>
-          )}
         </div>
       </div>
     </main>

@@ -71,14 +71,8 @@ export function AppShell() {
         <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-5 lg:py-5">
           <Link
             to="/"
-            className="flex items-center gap-2.5 whitespace-nowrap font-serif text-lg font-semibold focus-visible:outline-side-ring"
+            className="whitespace-nowrap font-serif text-lg font-semibold focus-visible:outline-side-ring"
           >
-            <span
-              aria-hidden="true"
-              className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-ink"
-            >
-              <Icon name="list" className="size-4" />
-            </span>
             Question bank
           </Link>
           <button
