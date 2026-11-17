@@ -337,7 +337,17 @@ export function buildOpenApi() {
         get: {
           tags: ['Reference data'],
           summary: 'Tag categories and values (global taxonomy, no counts)',
+          description:
+            "With `for=filter`, the Technology category is narrowed to technologies used by the caller's departments.",
           security: secured,
+          parameters: [
+            {
+              name: 'for',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['filter'] },
+            },
+          ],
           responses: {
             200: {
               description: 'OK',

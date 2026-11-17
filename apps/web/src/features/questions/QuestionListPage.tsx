@@ -54,7 +54,8 @@ export function QuestionListPage() {
   }, [filters.q]);
 
   const search = useQuestionSearch(filters);
-  const tags = useTags();
+  const tags = useTags(); // full taxonomy, so chips from a pasted URL still get labels
+  const filterTags = useTags(true); // what the filter bar offers
   const clients = useClients();
   const tagLabel = useMemo(() => labelLookup(tags.data), [tags.data]);
 
@@ -71,10 +72,10 @@ export function QuestionListPage() {
 
   const filterBar = (
     <FilterBar
-      categories={tags.data}
+      categories={filterTags.data}
       clients={clients.data}
-      tagsError={tags.isError}
-      onRetryTags={() => void tags.refetch()}
+      tagsError={filterTags.isError}
+      onRetryTags={() => void filterTags.refetch()}
       showStatus={me?.role !== 'USER'}
       filters={filters}
       onChange={(f) => setFilters(f)}

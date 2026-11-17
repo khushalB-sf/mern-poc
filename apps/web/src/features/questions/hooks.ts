@@ -44,10 +44,11 @@ const rank = (slug: string) => {
   return i === -1 ? CATEGORY_ORDER.length : i;
 };
 
-export const useTags = () =>
+// `forFilter` narrows Technology to the caller's departments (the list page's filter bar only).
+export const useTags = (forFilter = false) =>
   useQuery({
-    queryKey: ['tags'],
-    queryFn: ({ signal }) => listTags(signal),
+    queryKey: forFilter ? ['tags', 'filter'] : ['tags'],
+    queryFn: ({ signal }) => listTags(signal, forFilter),
     staleTime: Infinity,
     // Technology is what people filter by most, so it comes first; the API returns alphabetical order.
     select: (categories) =>

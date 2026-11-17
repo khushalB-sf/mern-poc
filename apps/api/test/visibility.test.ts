@@ -283,6 +283,19 @@ describe('IMP-01: supporting endpoints do not disclose restricted data', () => {
     ]);
   });
 
+  it("GET /tags?for=filter narrows Technology to the caller's departments", async () => {
+    // Fixtures: Globex questions only use react; Acme ones use nodejs.
+    const tech = async (id: string, q = '?for=filter') =>
+      (await as(id)(`/api/tags${q}`)).body.categories
+        .find((c: { slug: string }) => c.slug === 'technology')
+        .tags.map((t: { value: string }) => t.value)
+        .sort();
+    expect(await tech(world.users.authorGlobex.id)).toEqual(['react']);
+    expect(await tech(world.users.authorAcme.id)).toContain('nodejs');
+    expect(await tech(world.users.admin.id)).toEqual(['nodejs', 'react']);
+    expect(await tech(world.users.authorGlobex.id, '')).toEqual(['nodejs', 'react']);
+  });
+
   it('both require authentication', async () => {
     expect((await request(app).get('/api/clients')).status).toBe(401);
     expect((await request(app).get('/api/tags')).status).toBe(401);

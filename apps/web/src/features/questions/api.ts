@@ -17,8 +17,10 @@ export const getQuestion = (id: string, signal?: AbortSignal) =>
 export const getHistory = (id: string, signal?: AbortSignal) =>
   apiFetch<{ items: HistoryItem[] }>(`/questions/${id}/history`, { signal }).then((r) => r.items);
 
-export const listTags = (signal?: AbortSignal) =>
-  apiFetch<{ categories: TagCategory[] }>('/tags', { signal }).then((r) => r.categories);
+export const listTags = (signal?: AbortSignal, forFilter = false) =>
+  apiFetch<{ categories: TagCategory[] }>(forFilter ? '/tags?for=filter' : '/tags', {
+    signal,
+  }).then((r) => r.categories);
 
 export const listClients = (signal?: AbortSignal) =>
   apiFetch<{ items: Client[] }>('/clients', { signal }).then((r) => r.items);
