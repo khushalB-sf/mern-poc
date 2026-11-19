@@ -23,7 +23,7 @@ describe('sidebar: what is waiting for me', () => {
       'GET /api/questions/summary': { body: { ...zero, toReview: 3 } },
     });
     renderApp('/');
-    const link = await screen.findByRole('link', { name: 'Review queue, 3 waiting' });
+    const link = await screen.findByRole('link', { name: 'Review queue 3 waiting' });
     expect(link).toHaveAttribute('href', '/?status=PENDING');
   });
 
@@ -42,7 +42,7 @@ describe('sidebar: what is waiting for me', () => {
       },
     });
     renderApp('/');
-    const link = await screen.findByRole('link', { name: 'My questions, 1 rejected' });
+    const link = await screen.findByRole('link', { name: 'My questions 1 rejected' });
     expect(link).toHaveAttribute('href', '/?mine=true');
     expect(screen.queryByRole('link', { name: /Review queue/ })).toBeNull();
   });
@@ -54,7 +54,7 @@ describe('sidebar: what is waiting for me', () => {
       'GET /api/notifications': { body: { items: [], unreadCount: 2 } },
     });
     renderApp('/');
-    await screen.findByRole('link', { name: 'Notifications, 2 unread' });
+    await screen.findByRole('link', { name: 'Notifications 2 unread' });
     expect(screen.queryByRole('link', { name: /Review queue/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /My questions/ })).toBeNull();
   });

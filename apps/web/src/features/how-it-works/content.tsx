@@ -20,6 +20,15 @@ export const ROLE_ROWS: { action: string; cells: RoleCells }[] = [
     cells: ['no', 'Your own', 'yes', 'yes'],
   },
   { action: 'Read a question’s history', cells: ['yes', 'yes', 'yes', 'yes'] },
+  {
+    action: 'See how many questions wait for review (the Review queue)',
+    cells: ['no', 'no', 'yes', 'yes'],
+  },
+  { action: 'Filter the list to “My questions”', cells: ['no', 'yes', 'no', 'yes'] },
+  {
+    action: 'Get a notification when a reviewer approves or rejects your question',
+    cells: ['no', 'yes', 'no', 'yes'],
+  },
   { action: 'Create a global question', cells: ['no', 'yes', 'no', 'Live at once'] },
   {
     action: 'Create a question for a department',
@@ -42,13 +51,24 @@ export const ROLE_ROWS: { action: string; cells: RoleCells }[] = [
   { action: 'Add, edit or delete users, including reviewers', cells: ['no', 'no', 'no', 'yes'] },
   { action: 'Add, edit or delete a department', cells: ['no', 'no', 'no', 'yes'] },
   { action: 'Move a question to another department', cells: ['no', 'no', 'no', 'no'] },
-  { action: 'Delete a question (hidden, history kept)', cells: ['no', 'no', 'no', 'yes'] },
+  {
+    action: 'Delete a question (hidden, history kept)',
+    cells: ['no', 'Your own, until approved', 'no', 'Any'],
+  },
   {
     action: 'Restore a deleted question, department or user',
     cells: ['no', 'no', 'no', 'yes'],
   },
   {
     action: 'Add, rename, remove or restore a department’s technologies',
+    cells: ['no', 'no', 'no', 'yes'],
+  },
+  {
+    action: 'Add, rename or archive seniority and question-type tags',
+    cells: ['no', 'no', 'no', 'yes'],
+  },
+  {
+    action: 'Browse the audit trail and download it as CSV',
     cells: ['no', 'no', 'no', 'yes'],
   },
 ];
@@ -451,8 +471,9 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
   },
   {
     name: 'tag_category · tag',
-    purpose: 'The fixed categories: technology, seniority, question type.',
-    keys: 'archived_at on a tag hides it from pickers and filters but keeps it on old questions',
+    purpose:
+      'The fixed categories: technology, seniority, question type. An Admin manages the values of the last two here and technologies per department.',
+    keys: 'archived_at on a tag hides it from pickers and filters but keeps it on old questions · renaming changes the label, never the stored value',
   },
   {
     name: 'client_tag',
@@ -468,8 +489,14 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
   {
     name: 'audit_event',
     purpose:
-      'Who did what and when: question created, edited, reviewed, deleted or restored; department and technology changes; duplicate rejected or overridden.',
-    keys: 'question_id is null for a rejected duplicate · JSON payload',
+      'Who did what and when: question created, edited, reviewed, deleted or restored; user, department, technology and tag changes; duplicate rejected or overridden.',
+    keys: 'append-only: a database trigger refuses UPDATE and DELETE · question_id is null for a rejected duplicate · JSON payload',
+  },
+  {
+    name: 'notification',
+    purpose:
+      'One row when a reviewer decides on a question: who is told, which question, approved or rejected. It holds ids only; the question text is read when it is shown, and only while that person can still see the question.',
+    keys: 'user_id · read_at is null while unread · question_id has no foreign key, so a later delete cannot break it',
   },
   {
     name: 'refresh_token',
@@ -614,11 +641,19 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       },
       {
         title: 'Edit',
-        leaves: [{ text: 'Updates question' }, { text: 'Audit event holds the diff' }],
+        leaves: [
+          { text: 'Refuses a stale save (409)' },
+          { text: 'Updates question' },
+          { text: 'Audit event holds the diff' },
+        ],
       },
       {
         title: 'Review',
-        leaves: [{ text: 'Row lock, then the decision' }, { text: 'Audit event holds the note' }],
+        leaves: [
+          { text: 'Row lock, then the decision' },
+          { text: 'Audit event holds the note' },
+          { text: 'Writes a notification for the author' },
+        ],
       },
       {
         title: 'Department technologies',
@@ -658,6 +693,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Create global questions' },
           { text: 'Create for a department you hold a grant for' },
           { text: 'Edit only questions you wrote (resubmits)' },
+          { text: 'Withdraw your own question until it is approved' },
         ],
       },
       {
@@ -665,6 +701,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'See every status in your departments' },
           { text: 'Approve or reject with a note' },
+          { text: 'See the review queue count' },
           { text: 'No grant, no access' },
         ],
       },
@@ -675,7 +712,9 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Add, edit and delete users and reviewers' },
           { text: 'Add, edit, delete and restore departments' },
           { text: 'Manage each department’s technologies' },
+          { text: 'Manage seniority and type tags' },
           { text: 'Restore deleted questions' },
+          { text: 'Browse and export the audit trail' },
         ],
       },
       {
@@ -869,7 +908,13 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'client_tag: department technologies' },
         ],
       },
-      { title: 'Audit', leaves: [{ text: 'audit_event: who, what, when' }] },
+      {
+        title: 'Audit and notices',
+        leaves: [
+          { text: 'audit_event: who, what, when (append-only)' },
+          { text: 'notification: a decision on your question' },
+        ],
+      },
       {
         title: 'How it is queried',
         leaves: [

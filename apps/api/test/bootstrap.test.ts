@@ -15,11 +15,11 @@ beforeEach(async () => {
 afterAll(() => db.$disconnect());
 
 describe('bootstrapAdmin', () => {
-  it('creates the first admin, who must choose their own password at first sign-in', async () => {
+  it('creates the first admin', async () => {
     const r = await bootstrapAdmin(db, log, { email: 'Boss@Example.com', password: GOOD });
     expect(r).toBe('created');
     const u = await db.appUser.findUniqueOrThrow({ where: { email: 'boss@example.com' } });
-    expect(u).toMatchObject({ role: 'ADMIN', active: true, mustChangePassword: true });
+    expect(u).toMatchObject({ role: 'ADMIN', active: true });
     expect(await verifyPassword(u.passwordHash, GOOD)).toBe(true);
     expect(await db.auditEvent.count({ where: { type: 'USER_CREATED' } })).toBe(1);
   });
@@ -40,13 +40,7 @@ describe('bootstrapAdmin', () => {
     );
   });
 
-  it("refuses a weak password, and an email that is already someone else's", async () => {
-    await expect(
-      bootstrapAdmin(db, log, { email: 'boss@example.com', password: 'password1234' }),
-    ).rejects.toThrow(/common|12/);
-    await expect(
-      bootstrapAdmin(db, log, { email: 'boss@example.com', password: 'short' }),
-    ).rejects.toThrow(/12/);
+  it("refuses an email that is already someone else's", async () => {
     const world = await buildWorld(db);
     await db.appUser.update({ where: { id: world.users.admin.id }, data: { active: false } }); // no active admin
     await expect(

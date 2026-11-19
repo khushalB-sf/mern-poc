@@ -22,7 +22,7 @@ export const recordBase: RequestHandler = (req, res, next) => {
   next();
 };
 
-const AUTH_ROUTES = new Set(['/api/auth/login', '/api/auth/mfa/verify', '/api/auth/refresh']);
+const AUTH_ROUTES = new Set(['/api/auth/login', '/api/auth/refresh']);
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 

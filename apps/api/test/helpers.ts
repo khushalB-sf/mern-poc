@@ -53,7 +53,7 @@ export async function resetDb(db: Db) {
   const rows = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
   const name = rows[0]?.name;
   if (!name?.endsWith('_test')) throw new Error(`refusing to truncate non-test database "${name}"`);
-  await db.$executeRaw`TRUNCATE audit_event, notification, password_reset, mfa_recovery_code, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
+  await db.$executeRaw`TRUNCATE audit_event, notification, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
 }
 
 // Cheap Argon2 parameters: fixtures need valid hashes, not strong ones.
@@ -204,14 +204,6 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['patch', `/api/admin/users/${UUID}`],
   ['delete', `/api/admin/users/${UUID}`],
   ['post', `/api/admin/users/${UUID}/restore`],
-  ['post', `/api/admin/users/${UUID}/reset-link`],
-  ['post', '/api/auth/change-password'],
-  ['post', '/api/auth/reset-password'],
-  ['post', '/api/auth/mfa/setup'],
-  ['post', '/api/auth/mfa/enable'],
-  ['post', '/api/auth/mfa/disable'],
-  ['post', '/api/auth/mfa/verify'],
-  ['post', `/api/admin/users/${UUID}/mfa-reset`],
   ['put', `/api/admin/users/${UUID}/clients`],
   ['get', '/api/admin/clients'],
   ['post', '/api/admin/clients'],

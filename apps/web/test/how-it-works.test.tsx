@@ -248,10 +248,12 @@ describe('how it works page', () => {
     renderApp('/how-it-works#approach');
     const list = await screen.findByRole('list', { name: 'Implementation decisions' });
     const decisions = within(list).getAllByRole('listitem');
-    expect(decisions).toHaveLength(10);
-    const first = decisions[0]!;
-    for (const label of ['The problem', 'What we did', 'Why', 'The cost']) {
-      expect(within(first).getByText(label)).toBeInTheDocument();
+    // Every decision, not just the first, has all four parts.
+    expect(decisions.length).toBeGreaterThanOrEqual(10);
+    for (const decision of decisions) {
+      for (const label of ['The problem', 'What we did', 'Why', 'The cost']) {
+        expect(within(decision).getByText(label)).toBeInTheDocument();
+      }
     }
     expect(
       within(list).getByRole('heading', { name: 'Who can see a question is decided in the SQL' }),
@@ -289,12 +291,28 @@ describe('how it works page', () => {
     }
   });
 
+  it('states who may delete a question, and lists the notification and audit tables', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#roles');
+    const row = (await screen.findByText('Delete a question (hidden, history kept)')).closest(
+      'tr',
+    )!;
+    // Author: their own until approved; Admin: any (not "admin only" any more)
+    expect(within(row).getByText('Your own, until approved')).toBeInTheDocument();
+    expect(screen.getByText('Browse the audit trail and download it as CSV')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Database' }));
+    expect(screen.getAllByText('notification').length).toBeGreaterThan(0);
+    expect(screen.getByText(/database trigger refuses UPDATE and DELETE/)).toBeInTheDocument();
+  });
+
   it('describes the review and department-technology features end to end', async () => {
     mockApi({ ...baseHandlers });
     renderApp('/how-it-works');
     await userEvent.click(await screen.findByRole('button', { name: 'Review a question' }));
     let tables = screen.getByRole('list', { name: 'Tables touched' });
     expect(within(tables).getByText(/QUESTION_APPROVED or QUESTION_REJECTED/)).toBeInTheDocument();
+    expect(within(tables).getByText('notification')).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('button', { name: 'Manage a department’s technologies' }),
     );

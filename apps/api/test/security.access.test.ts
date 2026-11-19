@@ -170,8 +170,10 @@ describe('B3 no existence oracle: "not allowed" looks exactly like "does not exi
       clientId: world.acme.id,
     });
     const probe = (client: string) =>
-      as(world.users.authorGlobex, 'get', `/api/questions?client=${client}`);
-    same(await probe(world.acme.id), await probe(RANDOM));
+      as(world.users.authorGlobex, 'get', `/api/questions?clientId=${client}`);
+    const real = await probe(world.acme.id);
+    expect(real.status).toBe(200); // a valid search, not a 400 that would make the comparison vacuous
+    same(real, await probe(RANDOM));
   });
 
   it('the duplicate check never reveals a question you cannot see', async () => {

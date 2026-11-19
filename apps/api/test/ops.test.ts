@@ -99,24 +99,4 @@ describe('purging expired sessions', () => {
     expect(await purgeExpiredTokens(db)).toBe(0);
     expect(await db.refreshToken.count({ where: { id: old.id } })).toBe(1);
   });
-
-  it('also removes used-up password reset links', async () => {
-    const u = world.users.plain.id;
-    const mk = (over: Record<string, unknown>) =>
-      db.passwordReset.create({
-        data: {
-          userId: u,
-          tokenHash: crypto.randomUUID(),
-          expiresAt: new Date(Date.now() + day),
-          createdById: u,
-          ...over,
-        },
-      });
-    await mk({ expiresAt: new Date(Date.now() - 20 * day) });
-    await mk({ usedAt: new Date(Date.now() - 20 * day) });
-    const fresh = await mk({});
-    await purgeExpiredTokens(db);
-    const left = await db.passwordReset.findMany();
-    expect(left.map((r) => r.id)).toEqual([fresh.id]);
-  });
 });

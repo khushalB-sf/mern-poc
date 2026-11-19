@@ -16,9 +16,12 @@ interface Props {
 /**
  * A filter dropdown built on native <details>: the summary is the button and keyboard toggle.
  * Added on top: close on outside click, on Escape (focus returns to the button) and when keyboard focus leaves.
+ * Keyboard: ArrowDown on the button opens the list; Up/Down/Home/End move between options; typing letters
+ * jumps to the option that starts with them. Space still toggles the focused option.
  */
 export function Dropdown({ label, count = 0, value, closeOnChange = false, children }: Props) {
   const ref = useRef<HTMLDetailsElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const active = count > 0 || !!value;
 
   useEffect(() => {
@@ -34,11 +37,55 @@ export function Dropdown({ label, count = 0, value, closeOnChange = false, child
       pointerInside = el.contains(e.target as Node);
       if (el.open && !pointerInside) close();
     };
+    const options = () => [
+      ...(panelRef.current?.querySelectorAll<HTMLElement>(
+        'input:not([disabled]), button:not([disabled]), [tabindex="0"]',
+      ) ?? []),
+    ];
+    const textOf = (o: HTMLElement) =>
+      (o.closest('label')?.textContent ?? o.getAttribute('aria-label') ?? o.textContent ?? '')
+        .trim()
+        .toLowerCase();
+    let typed = '';
+    let typedAt = 0;
     const onKeyDown = (e: KeyboardEvent) => {
       pointerInside = false;
       if (e.key === 'Escape' && el.open) {
         close();
         el.querySelector('summary')?.focus();
+        return;
+      }
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const summary = el.querySelector('summary');
+      const list = options();
+      const at = list.indexOf(document.activeElement as HTMLElement);
+      const go = (o: HTMLElement | undefined) => {
+        e.preventDefault();
+        o?.focus();
+      };
+      if (e.target === summary) {
+        if (e.key === 'ArrowDown') {
+          el.open = true;
+          go(list[0]);
+        }
+        return;
+      }
+      if (at < 0) return; // focus is on something that is not an option
+      if (e.key === 'ArrowDown') go(list[Math.min(at + 1, list.length - 1)]);
+      else if (e.key === 'ArrowUp') {
+        if (at === 0) go(summary as HTMLElement);
+        else go(list[at - 1]);
+      } else if (e.key === 'Home') go(list[0]);
+      else if (e.key === 'End') go(list[list.length - 1]);
+      else if (e.key.length === 1 && e.key !== ' ') {
+        // Typeahead: letters typed in quick succession form one prefix.
+        const now = Date.now();
+        typed = now - typedAt > 700 ? e.key.toLowerCase() : typed + e.key.toLowerCase();
+        typedAt = now;
+        // A repeated single letter cycles through the options that start with it.
+        const from = typed.length === 1 ? at + 1 : at;
+        const ordered = [...list.slice(from), ...list.slice(0, from)];
+        go(ordered.find((o) => textOf(o).startsWith(typed)));
       }
     };
     const onFocusOut = (e: FocusEvent) => {
@@ -78,6 +125,7 @@ export function Dropdown({ label, count = 0, value, closeOnChange = false, child
         <Icon name="chevronDown" className="size-4 transition-transform group-open:rotate-180" />
       </summary>
       <div
+        ref={panelRef}
         onChange={closeOnChange ? () => ref.current && (ref.current.open = false) : undefined}
         className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-y-auto rounded-xl border border-line bg-surface p-2 shadow-lg sm:inset-x-auto sm:left-0 sm:w-64"
       >

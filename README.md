@@ -114,7 +114,15 @@ npm test -w @qb/api                  # creates and migrates its own qb_test data
 npm test -w @qb/web
 npm run test:cov -w @qb/api          # coverage report (also: -w @qb/web)
 npm run lint && npm run typecheck
+npm run e2e -w @qb/web               # real-browser journeys (Playwright, see below)
+npm run mutate -w @qb/api            # mutation testing of the pure helpers (also: -w @qb/web)
 ```
+
+Besides the example-based tests there are **property tests** (`fast-check`: CSV escaping, name keys, cursors, tokens, URL filters), an **OpenAPI contract test** (`apps/api/test/contract.test.ts`: real responses must match the documented schemas, with no undocumented fields) and **mutation testing** (Stryker, on the small pure files; scores were about 92% when last run, the survivors being equivalent mutants).
+
+**End-to-end tests** (`apps/web/e2e`) drive a real Chromium through sign-in, who-sees-what, the review workflow, keyboard use of the filters and an axe scan (including colour contrast) of the main pages. They use their **own database `qb_e2e` and ports 14001 / 15174**, reset on every run, and never touch the development database or servers. One-time setup: `npx playwright install chromium` (in `apps/web`). They need Postgres running (`docker compose up -d db`).
+
+**CI** (`.github/workflows/ci.yml`): lint, type-check, formatting, API and web tests against a Postgres service, builds, a dependency audit (fails on critical), and the E2E job; mutation testing runs weekly and on demand. The workflow has been checked locally command by command but has not yet run on GitHub.
 
 The security attack suites (`security.*.test.ts`) try to break authentication, access control, input handling and HTTP headers; see [docs/06-security-review.md](docs/06-security-review.md) for the findings and recommendations. The API tests run against a real database (no mocks). The most important ones are in `apps/api/test/visibility.test.ts` (client restriction cannot be detected through search, filters, paging or by ID) and `apps/api/test/questions.write.test.ts` (who may add and edit, including direct-by-ID attempts).
 
@@ -139,12 +147,16 @@ Everything is in `.env` (copy of `.env.example`). Notable settings:
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`                 | Token signing secrets. The defaults are dev-only placeholders; replace them (`openssl rand -base64 48`) for anything shared. The API refuses the placeholders when `COOKIE_SECURE=true`. |
 | `COOKIE_SECURE`                                           | `true` only when served over https. Safari drops secure cookies on plain `http://localhost`.                                                                                             |
 | `SEED_ON_START`                                           | Seed demo data on start when the database is empty.                                                                                                                                      |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`                           | The first admin of a real deployment, created by the `migrate` job when there is no active admin (set both; password 12+ characters). Use this instead of the demo seed.               |
+| `METRICS_TOKEN`                                           | Enables `GET /api/metrics` (Prometheus) for `Authorization: Bearer <token>`. Unset: the endpoint does not exist.                                                                         |
+| `REDIS_URL`                                               | Shared store for the rate limits when running more than one API process. Unset: counters live in memory. Redis down: limits stop applying rather than failing requests.                 |
+| `DB_STATEMENT_TIMEOUT_MS`                                 | Aborts any database statement that runs longer (default 15,000).                                                                                                                         |
 | `ALLOWED_ORIGINS`                                         | Origins allowed to make state-changing requests (CSRF check). Same-origin requests are always allowed.                                                                                   |
 | `DOCS_ENABLED`                                            | Serves Swagger UI at `/api/docs`. Off by default in production; `.env.example` sets it to `true` for the local demo.                                                                     |
 | `TRUST_PROXY`                                             | Number of reverse proxies whose `X-Forwarded-For` is trusted (default `0`; Compose sets `1` for nginx). Only above 0 if clients cannot reach the API port directly.                      |
 | `RATE_LIMIT_OTHER_PER_MIN`, `RATE_LIMIT_AUTH_PER_MIN` | Per-user allowance (120/min) shared by `/tags`, `/clients` and `/admin/*`, and per-address allowance (30/min) for `/auth/refresh` and `/auth/logout`. The questions API has its own (`RATE_LIMIT_API_PER_MIN`, 120/min). |
 | `RATE_LIMIT_LOGIN_PER_MIN`, `RATE_LIMIT_LOGIN_IP_PER_MIN` | Failed-login limits per IP and email (5) and per IP across all emails (30).                                                                                                              |
-| `VITE_SHOW_DEMO_ACCOUNTS`                                 | Shows the Demo accounts panel on the login page; clicking one fills in the email **and the demo password** (which is therefore in the web bundle). Set `false` for real deployments.     |
+| `VITE_SHOW_DEMO_ACCOUNTS`                                 | Shows the Demo accounts panel on the login page; clicking one fills in the email **and the demo password** (which is therefore in the web bundle). Set `false` for real deployments (Compose defaults it to `false`).     |
 
 ## Troubleshooting
 
@@ -161,11 +173,16 @@ Everything is in `.env` (copy of `.env.example`). Notable settings:
 ## Project layout
 
 ```
-apps/api/       Express API: modules/{auth,questions,tags,clients,audit}, prisma/, seed, tests
-apps/web/       React UI: features/{auth,questions}, shared/{api,ui}, nginx config, tests
-docs/           requirements, technology decisions (ADRs), architecture, task plan, progress, perf notes
-compose.yaml    db + api + web
+apps/api/       Express API: modules/{auth,questions,tags,clients,notifications,admin,audit}, prisma/, seed, tests
+apps/web/       React UI: features/{auth,questions,admin,notifications,how-it-works}, shared/{api,ui}, nginx config, tests, e2e/
+docs/           requirements, technology decisions (ADRs), architecture, task plan, progress, perf notes, security review
+deploy/         Caddyfile for the optional TLS profile
+scripts/        backup.sh and restore.sh (database dumps)
+.github/        CI workflow
+compose.yaml    db + migrate job + api + web (+ caddy with --profile tls)
 ```
+
+Glossary: the product says **department**; the data model, paths and fields still say `client` (`/clients`, `clientId`). See the glossary in [docs/03-architecture.md](docs/03-architecture.md).
 
 Key design rule: `apps/api/src/modules/questions/question.repo.ts` is the **only** file that reads the question tables, and every function in it takes the acting user and applies the client-visibility rule inside the SQL. A test fails if any other file touches them.
 
@@ -184,4 +201,4 @@ Key design rule: `apps/api/src/modules/questions/question.repo.ts` is the **only
 
 ## Known limitations
 
-See [docs/05-progress.md](docs/05-progress.md) for the full list. The main ones: duplicate detection is trigram-based (it misses paraphrases and can flag genuinely different questions, which the "add it anyway" override handles), concurrent edits are last-write-wins, performance was measured at 5,000 questions on one machine (not under load), and there is no cloud deployment, CI pipeline or Playwright test yet. Also still to do: the 10k-row performance run, the brief's §7 walkthrough script, a security review write-up, and a final clean-clone verification report.
+See [docs/05-progress.md](docs/05-progress.md) for the full list. The main ones: duplicate detection is trigram-based (it misses paraphrases and can flag genuinely different questions, which the "add it anyway" override handles); two people editing one question get a conflict message instead of silently overwriting each other, but the second person must reapply their change; performance was measured at 5,000 questions on one machine (not under load); the question search pages with an offset capped at 10,000 rather than a cursor; sign-in is email and password only (no multi-factor, and no self-service password change or reset: an admin sets passwords); there is no error tracking or tracing service (Sentry/OpenTelemetry); the CI workflow, Let's Encrypt certificates and a live database restore over the running database have not been exercised end to end; and there is no cloud deployment.

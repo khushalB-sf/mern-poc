@@ -15,7 +15,6 @@ import {
   verifyAccess,
   verifyRefresh,
 } from '../src/modules/auth/tokens.js';
-import { passwordProblem } from '../src/modules/auth/passwordPolicy.js';
 import { resolveTagIds } from '../src/modules/tags/tags.js';
 
 const SECRET = 's'.repeat(32);
@@ -317,62 +316,5 @@ describe('resolveTagIds rules (with a stand-in database)', () => {
       't1',
     ]);
     expect(await resolveTagIds(fake(tags, []), [])).toEqual([]);
-  });
-});
-
-describe('password policy', () => {
-  const ctx = { email: 'alice.author@example.com', name: 'Alice Author' };
-
-  it('accepts a long, unpredictable password', () => {
-    for (const p of [
-      'correct-horse-battery-staple',
-      'tr0ub4dor&3-and-more',
-      'plum 7 river 2 quiet 9',
-    ]) {
-      expect(passwordProblem(p, ctx)).toBeNull();
-    }
-  });
-
-  it('refuses short passwords', () => {
-    expect(passwordProblem('Short1!', ctx)).toMatch(/12 characters/);
-    expect(passwordProblem('a'.repeat(11), ctx)).toMatch(/12 characters/);
-  });
-
-  it('refuses well-known passwords however they are dressed up', () => {
-    for (const p of [
-      'password1234',
-      'Password123456',
-      'qwertyuiop12',
-      'iloveyou1234',
-      'Passw0rd!demo',
-      'welcome123456',
-      'LETMEINLETMEIN',
-    ]) {
-      expect(passwordProblem(p, ctx), p).toMatch(/common|guess/i);
-    }
-  });
-
-  it('refuses passwords built from the account email or name', () => {
-    expect(passwordProblem('alice.author-2026!', ctx)).toMatch(/email|name/i);
-    expect(passwordProblem('ILoveAlice-Author', ctx)).toMatch(/email|name/i);
-    expect(passwordProblem('my-name-is-author-1', ctx)).toMatch(/email|name/i);
-    // short parts of a name are ignored: "Al" would otherwise block half the dictionary
-    expect(passwordProblem('al-bo-1234-xyz-pqr', { email: 'al@x.dev', name: 'Al Bo' })).toBeNull();
-  });
-
-  it('refuses repeats and runs', () => {
-    for (const p of [
-      'aaaaaaaaaaaa',
-      '121212121212',
-      '123456789012',
-      'abcdefghijkl',
-      'abababababab',
-    ]) {
-      expect(passwordProblem(p, ctx), p).not.toBeNull();
-    }
-  });
-
-  it('works without a name or email', () => {
-    expect(passwordProblem('correct-horse-battery-staple', {})).toBeNull();
   });
 });

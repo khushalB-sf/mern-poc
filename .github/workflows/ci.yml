@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The same placeholders as .env.example. Nothing here is a real secret.
+  DATABASE_URL: postgresql://qb:ci-password@localhost:5432/qb
+  JWT_ACCESS_SECRET: ci-access-secret-0123456789-0123456789
+  JWT_REFRESH_SECRET: ci-refresh-secret-9876543210-9876543210
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: qb
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: qb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qb -d qb"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run generate -w @qb/api
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npx prettier --check apps .github compose.yaml
+      - name: API tests (real Postgres)
+        run: npm test -w @qb/api
+      - name: Web tests
+        run: npm test -w @qb/web
+      - name: Build
+        run: npm run build -w @qb/api && npm run build -w @qb/web
+      # Known and accepted: four "high" advisories (mysql2, deepmerge-ts) come in through the Prisma CLI's own
+      # tooling. The CLI runs only in the migrate job; the API image deletes it. Anything critical fails the build.
+      - name: Dependency audit (critical)
+        run: npm audit --omit=dev --audit-level=critical
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: checks
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: qb
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: qb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qb -d qb"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run generate -w @qb/api
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: End-to-end tests (own database qb_e2e, ports 14001 / 15174)
+        run: npm run e2e -w @qb/web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+
+  mutation:
+    # Slower and advisory: runs on demand and weekly, never blocks a pull request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run generate -w @qb/api
+      - run: npm run mutate -w @qb/api
+      - run: npm run mutate -w @qb/web

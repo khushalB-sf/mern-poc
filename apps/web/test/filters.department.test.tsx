@@ -72,7 +72,7 @@ describe('list filters: technology follows the department', () => {
     await screen.findByRole('link', { name: /rate limiter/ });
     await chooseDepartment('Python only');
     await screen.findByRole('link', { name: /rate limiter/ });
-    expect(router.state.location.search).toContain('client=c2');
+    expect(router.state.location.search).toContain('clientId=c2');
     expect(router.state.location.search).not.toContain('react');
     expect(router.state.location.search).toContain('seniority%3Amid');
   });

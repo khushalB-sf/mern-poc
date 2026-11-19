@@ -78,8 +78,9 @@ describe('C2 query-string parameters', () => {
     'offset=-1',
     'offset=10001',
     'offset=1.5',
-    'client=not-a-uuid',
-    'client[]=x',
+    'clientId=not-a-uuid',
+    'clientId[]=x',
+    'client=anything', // the old name is not accepted
     'q=a&q=b',
     'status=APPROVED&status=PENDING',
     'status=DROP',

@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
     // Same-origin in dev too: the browser only ever talks to Vite, which forwards /api to the API.
     // That keeps SameSite=Strict cookies working exactly as they do behind nginx.
-    proxy: { '/api': { target: 'http://localhost:4000' } },
+    proxy: { '/api': { target: process.env.API_PROXY_TARGET ?? 'http://localhost:4000' } },
   },
   test: {
     environment: 'jsdom',

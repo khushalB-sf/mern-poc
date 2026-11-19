@@ -45,39 +45,23 @@ enum AuditType {
   TAG_LINKED
   TAG_UNLINKED
   USER_RESTORED
-  PASSWORD_CHANGED
-  PASSWORD_RESET_LINK_CREATED
-  PASSWORD_RESET_USED
-  MFA_ENABLED
-  MFA_DISABLED
-  MFA_RESET
 }
 
 model AppUser {
-  id                 String            @id @default(uuid()) @db.Uuid
-  email              String            @unique
-  name               String
-  passwordHash       String            @map("password_hash")
-  role               Role              @default(USER)
-  active             Boolean           @default(true)
-  // True after an admin sets the password: the person must choose their own before doing anything else.
-  mustChangePassword Boolean           @default(false) @map("must_change_password")
-  passwordChangedAt  DateTime?         @map("password_changed_at") @db.Timestamptz()
-  // Two-factor (TOTP). The secret is encrypted; mfaEnabledAt stays null until a code has confirmed it.
-  mfaSecretEnc       String?           @map("mfa_secret_enc")
-  mfaEnabledAt       DateTime?         @map("mfa_enabled_at") @db.Timestamptz()
-  // The last accepted TOTP time step: a code cannot be used twice.
-  mfaLastStep        Int?              @map("mfa_last_step")
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique
+  name          String
+  passwordHash  String         @map("password_hash")
+  role          Role           @default(USER)
+  active        Boolean        @default(true)
   // Soft delete: the row stays so authored questions and the audit trail keep their author.
-  deletedAt          DateTime?         @map("deleted_at") @db.Timestamptz()
-  grants             ClientGrant[]
-  questions          Question[]        @relation("QuestionAuthor")
-  reviewed           Question[]        @relation("QuestionReviewer")
-  auditEvents        AuditEvent[]
-  refreshTokens      RefreshToken[]
-  passwordResets     PasswordReset[]
-  mfaRecoveryCodes   MfaRecoveryCode[]
-  notifications      Notification[]
+  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz()
+  grants        ClientGrant[]
+  questions     Question[]     @relation("QuestionAuthor")
+  reviewed      Question[]     @relation("QuestionReviewer")
+  auditEvents   AuditEvent[]
+  refreshTokens RefreshToken[]
+  notifications Notification[]
 
   @@map("app_user")
 }
@@ -214,33 +198,6 @@ model RefreshToken {
 
   @@index([familyId])
   @@map("refresh_token")
-}
-
-// A one-time link an admin hands to someone who cannot sign in. Only the hash of the token is stored.
-model PasswordReset {
-  id          String    @id @default(uuid()) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  tokenHash   String    @unique @map("token_hash")
-  expiresAt   DateTime  @map("expires_at") @db.Timestamptz()
-  usedAt      DateTime? @map("used_at") @db.Timestamptz()
-  createdById String    @map("created_by_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  user        AppUser   @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@index([userId])
-  @@map("password_reset")
-}
-
-// One-time codes for getting in without the authenticator. Only hashes are kept.
-model MfaRecoveryCode {
-  id       String    @id @default(uuid()) @db.Uuid
-  userId   String    @map("user_id") @db.Uuid
-  codeHash String    @map("code_hash")
-  usedAt   DateTime? @map("used_at") @db.Timestamptz()
-  user     AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, codeHash])
-  @@map("mfa_recovery_code")
 }
 
 enum NotificationType {

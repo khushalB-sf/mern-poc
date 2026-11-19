@@ -82,10 +82,6 @@ const PUBLIC = new Set([
   'POST /api/auth/login',
   'POST /api/auth/refresh',
   'POST /api/auth/logout',
-  // The one-time reset link is the credential: the person cannot sign in.
-  'POST /api/auth/reset-password',
-  // The step-up token from a correct password is the credential for the second sign-in step.
-  'POST /api/auth/mfa/verify',
   // API docs describe the contract only and carry no data.
   'GET /api/openapi.json',
   'GET /api/docs',

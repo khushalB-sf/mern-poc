@@ -47,7 +47,7 @@ const schema = z.object({
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(15_000),
   // Bearer token for GET /api/metrics (Prometheus). Unset = the endpoint does not exist.
   METRICS_TOKEN: z.string().min(16, 'must be at least 16 characters').optional(),
-  // The first admin of a real deployment (created once, when there is no active admin; the password is temporary).
+  // The first admin of a real deployment (created once, when there is no active admin).
   // Shared store for rate limits, so several API processes count together. Unset: in-memory, per process.
   REDIS_URL: z
     .string()
@@ -55,10 +55,6 @@ const schema = z.object({
     .optional(),
   ADMIN_EMAIL: z.email().max(254).optional(),
   ADMIN_PASSWORD: z.string().min(12, 'must be at least 12 characters').max(200).optional(),
-  // Admins must enrol two-factor before they can use anything else.
-  MFA_REQUIRED_FOR_ADMINS: bool.default(false),
-  // Key material for encrypting two-factor secrets at rest. Defaults to one derived from JWT_REFRESH_SECRET.
-  MFA_ENCRYPTION_KEY: z.string().min(32, 'must be at least 32 characters').optional(),
   SEED_ON_START: bool.default(false),
   SEED_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORD),
 });

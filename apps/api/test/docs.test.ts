@@ -75,10 +75,7 @@ describe('OpenAPI document', () => {
   it('contains no credentials or secrets', async () => {
     const text = JSON.stringify(await getSpec());
     expect(text).not.toContain(PASSWORD);
-    // The word "secret" is allowed (the two-factor setup response has a `secret` field); real credentials are not.
-    expect(text).not.toMatch(
-      /passw0rd|jwt_(access|refresh)_secret|secret[-_ ]?key|dev-only|BEGIN [A-Z ]*PRIVATE KEY/i,
-    );
+    expect(text).not.toMatch(/passw0rd|secret/i);
   });
 });
 

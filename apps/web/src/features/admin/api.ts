@@ -130,14 +130,6 @@ export const restoreUser = (id: string) =>
     (r) => r.user,
   );
 
-export const createResetLink = (id: string) =>
-  apiFetch<{ token: string; expiresAt: string }>(`/admin/users/${id}/reset-link`, {
-    method: 'POST',
-  });
-
-export const resetMfa = (id: string) =>
-  apiFetch<void>(`/admin/users/${id}/mfa-reset`, { method: 'POST' });
-
 export interface AuditEvent {
   id: string;
   type: string;

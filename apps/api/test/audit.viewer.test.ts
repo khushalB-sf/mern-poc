@@ -123,22 +123,11 @@ describe('GET /admin/audit', () => {
       .post(`/api/admin/clients/${world.acme.id}/technologies`)
       .set('Cookie', admin())
       .send({ label: 'Rust' });
-    const link = await request(app)
-      .post(`/api/admin/users/${world.users.authorA.id}/reset-link`)
-      .set('Cookie', admin());
     const res = await get('/api/admin/audit');
     const types = res.body.items.map((i: { type: string }) => i.type);
-    expect(types).toEqual(
-      expect.arrayContaining([
-        'USER_CREATED',
-        'TAG_CREATED',
-        'TAG_LINKED',
-        'PASSWORD_RESET_LINK_CREATED',
-      ]),
-    );
+    expect(types).toEqual(expect.arrayContaining(['USER_CREATED', 'TAG_CREATED', 'TAG_LINKED']));
     const text = JSON.stringify(res.body);
     expect(text).not.toContain('temp-pass-123');
-    expect(text).not.toContain(link.body.token);
     expect(text).not.toMatch(/passwordHash|tokenHash/);
   });
 });

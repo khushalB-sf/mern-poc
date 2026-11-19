@@ -1,7 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createDepartment,
-  createResetLink,
   createUser,
   deleteDepartment,
   deleteUser,
@@ -20,7 +19,6 @@ import {
   listOtherTechnologies,
   restoreDepartment,
   restoreQuestion,
-  resetMfa,
   restoreUser,
   addDepartmentTechnology,
   removeDepartmentTechnology,
@@ -151,11 +149,6 @@ export const useDeletedUsers = () =>
   });
 
 export const useRestoreUser = () => useAdminMutation((id: string) => restoreUser(id));
-
-/** Not an admin-list mutation: it changes nothing that is displayed, it only returns the one-time token. */
-export const useCreateResetLink = () => useMutation({ mutationFn: createResetLink });
-
-export const useResetMfa = () => useAdminMutation((id: string) => resetMfa(id));
 
 export const useAudit = (filters: AuditFilters) =>
   useInfiniteQuery({

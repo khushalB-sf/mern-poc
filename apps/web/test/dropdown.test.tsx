@@ -15,6 +15,9 @@ const panel = (props: Partial<React.ComponentProps<typeof Dropdown>> = {}) =>
         <label>
           <input type="checkbox" /> Angular
         </label>
+        <label>
+          <input type="checkbox" /> Vue
+        </label>
       </Dropdown>
     </div>,
   );
@@ -81,6 +84,63 @@ describe('Dropdown', () => {
     await open();
     await userEvent.click(screen.getByRole('checkbox', { name: 'React' }));
     expect(details().open).toBe(true);
+  });
+});
+
+describe('Dropdown keyboard use', () => {
+  const box = (name: string) => screen.getByRole('checkbox', { name });
+
+  it('ArrowDown from the button opens the list and focuses the first option', async () => {
+    panel();
+    summary().closest('summary')!.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(details().open).toBe(true);
+    expect(box('React')).toHaveFocus();
+  });
+
+  it('arrows move between options and stop at the ends; Home and End jump', async () => {
+    panel();
+    await open();
+    box('React').focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(box('Angular')).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(box('Vue')).toHaveFocus(); // no wrap past the last
+    await userEvent.keyboard('{Home}');
+    expect(box('React')).toHaveFocus();
+    await userEvent.keyboard('{End}');
+    expect(box('Vue')).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(box('Angular')).toHaveFocus();
+  });
+
+  it('ArrowUp on the first option returns to the button', async () => {
+    panel();
+    await open();
+    box('React').focus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(document.activeElement?.tagName).toBe('SUMMARY');
+  });
+
+  it('typing letters jumps to the option that starts with them', async () => {
+    panel();
+    await open();
+    box('React').focus();
+    await userEvent.keyboard('v');
+    expect(box('Vue')).toHaveFocus();
+    await new Promise((r) => setTimeout(r, 750)); // a pause starts a new prefix
+    await userEvent.keyboard('an');
+    expect(box('Angular')).toHaveFocus();
+  });
+
+  it('typing does not toggle anything, and Space still toggles the focused option', async () => {
+    panel();
+    await open();
+    box('React').focus();
+    await userEvent.keyboard('v');
+    expect(box('Vue')).not.toBeChecked();
+    await userEvent.keyboard(' ');
+    expect(box('Vue')).toBeChecked();
   });
 });
 

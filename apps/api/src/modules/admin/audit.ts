@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { csvCell } from '../../http/csv.js';
 import { validateQuery } from '../../http/validate.js';
 import type { Db } from '../../db/prisma.js';
 import { decodeCursor, listAudit } from '../audit/audit.repo.js';
@@ -29,12 +30,6 @@ const AUDIT_TYPES = [
   'TAG_UPDATED',
   'TAG_LINKED',
   'TAG_UNLINKED',
-  'PASSWORD_CHANGED',
-  'PASSWORD_RESET_LINK_CREATED',
-  'PASSWORD_RESET_USED',
-  'MFA_ENABLED',
-  'MFA_DISABLED',
-  'MFA_RESET',
 ] as const;
 
 const date = (end: boolean) =>
@@ -64,16 +59,6 @@ const querySchema = z.strictObject({
 
 const EXPORT_CAP = 5000;
 const HEADER = ['time', 'type', 'actor', 'actor_id', 'question_id', 'details'];
-
-/**
- * One CSV cell. Quoted always, quotes doubled. A cell that starts with = + - @ (or a tab or return) would be
- * run as a formula by a spreadsheet, so it gets a leading apostrophe: names and notes are user input.
- */
-export const csvCell = (value: unknown): string => {
-  let v = value === null || value === undefined ? '' : String(value);
-  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
-  return `"${v.replace(/"/g, '""')}"`;
-};
 
 type Q = z.infer<typeof querySchema>;
 

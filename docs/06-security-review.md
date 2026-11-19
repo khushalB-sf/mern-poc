@@ -47,26 +47,31 @@ Attack suites: `apps/api/test/security.auth.test.ts`, `security.access.test.ts`,
 | `POST` with `Origin: https://evil.example` | 403 | 403 |
 | Published ports (`docker ps`) | `0.0.0.0:5436`, `0.0.0.0:4000` | config now `127.0.0.1` (applies when the stack is recreated with `docker compose up -d`) |
 
-## Loopholes and the better approach (not coded, ranked)
+## Loopholes and the better approach (ranked), with status after the follow-up round
+
+Status key: **Done** = built and covered by a test; **Open** = not done. Where a test could not prove it (needs real infrastructure) the status says what was and was not run.
 
 1. **Admin is one super-role (Medium).** Deleting a department, resetting passwords and promoting users need one account. Better: MFA (TOTP/WebAuthn) for admins, and a second approver (or at least an email notification) for destructive admin actions. The audit log already records them.
+   **Status: Open.** Two-factor sign-in (TOTP) was built and then removed at the project owner's request, so admins sign in with a password only. The second approver for destructive admin actions was not built. Mitigation that exists: every admin action is in the append-only audit trail, and the last active admin cannot be removed or demoted.**
 2. **Audit log is writable by the app (Medium).** `audit_event` can be edited or deleted with the application's database role. Better: grant only `INSERT`/`SELECT`, or add a trigger that rejects `UPDATE`/`DELETE`; ship the stream to an external log store.
+   **Status: Done.** A database trigger refuses `UPDATE` and `DELETE` on `audit_event` (`audit.immutable.test.ts`); admins can browse and export the trail. Shipping it to an external log store is not done.**
 3. **Review-queue flooding (Medium).** Any author can submit up to the API rate limit per minute, burying reviewers. Better: a per-author quota of pending questions and a daily cap, with the existing duplicate check as the first filter.
+   **Status: Open.** No per-author quota. Reviewers do get a queue count, and the duplicate check runs on create and edit.**
 4. **Passwords (Medium).** Length 8 is the only rule, and the demo password is public. Better: minimum 12, check against a breached-password list (k-anonymity API or a local list), force change on first login for admin-created accounts.
+   **Status: Open.** A stronger password policy and a forced change were built and then removed at the project owner's request: the rule is again a minimum of 8 characters (12 for `ADMIN_PASSWORD`), set by admins, and the demo password remains public unless the demo seed is off.**
 5. **Rate limits are per process and in memory (Low until scaled out).** Better: a shared store (Redis) and `limit_req` in nginx for `/api/auth/` as a second layer.
+   **Status: Done, behind config.** `REDIS_URL` moves the counters to Redis (verified with a real Redis: two app instances share one allowance, and requests pass when Redis is unreachable). The nginx `limit_req` second layer is not done.**
 6. **Database hardening (Low).** Add `statement_timeout` (stops a pathological search holding a connection), `sslmode=require` if the database is ever off-host, a least-privilege database role for the API (no DDL), and row-level security later (deferred in ADR-005).
+   **Status: Partly done.** `statement_timeout` is set (`DB_STATEMENT_TIMEOUT_MS`, tested). `sslmode`, a least-privilege database role and row-level security are not done.**
 7. **Retention (Low).** Expired refresh tokens are never purged (table grows); soft-deleted users keep their email forever. Better: a nightly purge job and an anonymisation step for erasure requests.
+   **Status: Partly done.** A purge job removes expired and revoked refresh tokens (tested). Anonymisation of deleted users is not done.**
 8. **Container supply chain (Low).** `prisma` (CLI) is a runtime dependency only to run migrations. Better: run migrations from a separate build stage so the CLI and its vulnerable transitive packages are not in the runtime image.
+   **Status: Done.** Migrations run in a separate `migrate` image target; the built API image was inspected and has no Prisma CLI. The four high advisories that remain in `npm audit` are in the CLI's tooling.**
 9. **CI (Low).** No pipeline yet. Better: run `npm test`, `npm audit --omit=dev`, lint and a secret scan on every push (the suites here run in about 40 seconds).
+   **Status: Written, not yet run on GitHub.** `.github/workflows/ci.yml` runs lint, type-check, formatting, tests, builds, `npm audit` (fails on critical) and the E2E job; each step was run locally.**
 
 ## Test inventory and coverage
 
-| | Before | After |
-|---|---|---|
-| API tests | 278 | see `npm test -w @qb/api` |
-| Web tests | 156 | 172 |
-| API coverage (statements / branches, excluding seed, server entry, generated client) | not measured | 98.9% / 95.0% |
-| Web coverage (statements / branches) | not measured | 93.6% / 87.8% |
+Counts change with every commit, so run the suites rather than trusting a number here: `npm test -w @qb/api`, `npm test -w @qb/web`, `npm run e2e -w @qb/web`. At the time of the first security round the API had 278 tests and the web 156; the API coverage was 98.9% statements / 95.0% branches and the web 93.6% / 87.8% (`npm run test:cov`, excluding seed, server entry and the generated client).
 
-Unit tests (no database): tokens, passwords, CSRF origin check, NUL gate, technology name normalisation, error handler, tag-resolution rules with a stand-in database, `Dropdown` behaviour (including the regression for the click-on-label crash).
-Integration tests (supertest against the isolated `qb_test` database): the attack suites above plus the existing visibility, review, admin and auth suites.
+Kinds of test now in the repo: unit (no database), integration (supertest against the isolated `qb_test` database, no mocks), the attack suites (`security.*.test.ts`), property tests (`fast-check`), an OpenAPI contract test, mutation testing (Stryker) and end-to-end tests in real Chromium (own database and ports).

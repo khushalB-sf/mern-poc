@@ -1,32 +1,28 @@
 import type { RouteObject } from 'react-router';
-import { AccountPage } from '../features/auth/AccountPage';
-import { ChangePasswordPage } from '../features/auth/ChangePasswordPage';
 import { LoginPage } from '../features/auth/LoginPage';
-import { ResetPasswordPage } from '../features/auth/ResetPasswordPage';
-import { AdminDepartmentsPage } from '../features/admin/AdminDepartmentsPage';
-import { AdminAuditPage } from '../features/admin/AdminAuditPage';
-import { AdminDeletedQuestionsPage } from '../features/admin/AdminDeletedQuestionsPage';
-import { AdminTagsPage } from '../features/admin/AdminTagsPage';
-import { AdminUsersPage } from '../features/admin/AdminUsersPage';
 import { RequireAuth } from '../features/auth/RequireAuth';
 import { RequireRole } from '../features/auth/RequireRole';
-import { HowItWorksPage } from '../features/how-it-works/HowItWorksPage';
-import { NotificationsPage } from '../features/notifications/NotificationsPage';
-import { QuestionDetailPage } from '../features/questions/QuestionDetailPage';
-import { QuestionFormPage } from '../features/questions/QuestionFormPage';
 import { QuestionListPage } from '../features/questions/QuestionListPage';
 import { AppShell } from './AppShell';
 import { NotFoundPage, RouteError } from './pages';
 
+// Everything but sign-in and the question list is loaded when first visited, so the first paint does not
+// pay for the admin screens, the editor or the long How-it-works page.
+const page = <T extends string>(load: () => Promise<Record<T, React.ComponentType>>, name: T) =>
+  ({ lazy: async () => ({ Component: (await load())[name] }) }) satisfies RouteObject;
+
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage />, errorElement: <RouteError /> },
-  // Public: the one-time link is the credential.
-  { path: '/reset-password', element: <ResetPasswordPage />, errorElement: <RouteError /> },
   // Public: it explains the access rules and holds no data, so it needs no session.
   {
     element: <AppShell />,
     errorElement: <RouteError />,
-    children: [{ path: 'how-it-works', element: <HowItWorksPage /> }],
+    children: [
+      {
+        path: 'how-it-works',
+        ...page(() => import('../features/how-it-works/HowItWorksPage'), 'HowItWorksPage'),
+      },
+    ],
   },
   {
     element: <RequireAuth />,
@@ -36,20 +32,60 @@ export const routes: RouteObject[] = [
         element: <AppShell />,
         children: [
           { index: true, element: <QuestionListPage /> },
-          { path: 'account', element: <AccountPage /> },
-          { path: 'notifications', element: <NotificationsPage /> },
-          { path: 'change-password', element: <ChangePasswordPage /> },
-          { path: 'questions/new', element: <QuestionFormPage mode="create" /> },
-          { path: 'questions/:id', element: <QuestionDetailPage /> },
-          { path: 'questions/:id/edit', element: <QuestionFormPage mode="edit" /> },
+          {
+            path: 'notifications',
+            ...page(
+              () => import('../features/notifications/NotificationsPage'),
+              'NotificationsPage',
+            ),
+          },
+          {
+            path: 'questions/new',
+            lazy: async () => {
+              const { QuestionFormPage } = await import('../features/questions/QuestionFormPage');
+              return { element: <QuestionFormPage mode="create" /> };
+            },
+          },
+          {
+            path: 'questions/:id',
+            ...page(() => import('../features/questions/QuestionDetailPage'), 'QuestionDetailPage'),
+          },
+          {
+            path: 'questions/:id/edit',
+            lazy: async () => {
+              const { QuestionFormPage } = await import('../features/questions/QuestionFormPage');
+              return { element: <QuestionFormPage mode="edit" /> };
+            },
+          },
           {
             element: <RequireRole roles={['ADMIN']} />,
             children: [
-              { path: 'admin/users', element: <AdminUsersPage /> },
-              { path: 'admin/departments', element: <AdminDepartmentsPage /> },
-              { path: 'admin/deleted-questions', element: <AdminDeletedQuestionsPage /> },
-              { path: 'admin/tags', element: <AdminTagsPage /> },
-              { path: 'admin/audit', element: <AdminAuditPage /> },
+              {
+                path: 'admin/users',
+                ...page(() => import('../features/admin/AdminUsersPage'), 'AdminUsersPage'),
+              },
+              {
+                path: 'admin/departments',
+                ...page(
+                  () => import('../features/admin/AdminDepartmentsPage'),
+                  'AdminDepartmentsPage',
+                ),
+              },
+              {
+                path: 'admin/deleted-questions',
+                ...page(
+                  () => import('../features/admin/AdminDeletedQuestionsPage'),
+                  'AdminDeletedQuestionsPage',
+                ),
+              },
+              {
+                path: 'admin/tags',
+                ...page(() => import('../features/admin/AdminTagsPage'), 'AdminTagsPage'),
+              },
+              {
+                path: 'admin/audit',
+                ...page(() => import('../features/admin/AdminAuditPage'), 'AdminAuditPage'),
+              },
             ],
           },
           { path: '*', element: <NotFoundPage /> },

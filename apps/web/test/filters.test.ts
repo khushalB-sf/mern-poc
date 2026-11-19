@@ -13,7 +13,7 @@ import {
 describe('filters <-> URL', () => {
   it('parses a full URL', () => {
     const f = parseFilters(
-      new URLSearchParams('q=hooks&tags=technology:react,seniority:senior&client=c1&page=3'),
+      new URLSearchParams('q=hooks&tags=technology:react,seniority:senior&clientId=c1&page=3'),
     );
     expect(f).toEqual({
       q: 'hooks',

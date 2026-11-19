@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["vite/client", "@testing-library/jest-dom"]
   },
-  "include": ["src", "test", "*.ts"]
+  "include": ["src", "test", "e2e", "*.ts"]
 }

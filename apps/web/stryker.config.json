@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.pure.config.ts" },
+  "mutate": ["src/features/questions/filters.ts", "src/features/auth/hooks.ts:36-60"],
+  "coverageAnalysis": "perTest",
+  "reporters": ["clear-text", "progress"],
+  "tempDirName": ".stryker-tmp",
+  "thresholds": { "high": 85, "low": 70, "break": 60 }
+}

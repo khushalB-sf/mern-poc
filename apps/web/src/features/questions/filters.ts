@@ -35,7 +35,7 @@ export function parseFilters(sp: URLSearchParams): Filters {
   return {
     q: sp.get('q') ?? '',
     tags: (sp.get('tags') ?? '').split(',').filter(Boolean).sort(),
-    clientId: sp.get('client') ?? '',
+    clientId: sp.get('clientId') ?? '',
     status: STATUSES.includes(status) ? status : '',
     mine: sp.get('mine') === 'true',
     page: Number.isFinite(page) && page >= 1 ? page : 1,
@@ -47,7 +47,7 @@ export function toSearchParams(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();
   if (f.q) sp.set('q', f.q);
   if (f.tags.length) sp.set('tags', [...f.tags].sort().join(','));
-  if (f.clientId) sp.set('client', f.clientId);
+  if (f.clientId) sp.set('clientId', f.clientId);
   if (f.status) sp.set('status', f.status);
   if (f.mine) sp.set('mine', 'true');
   if (f.page > 1) sp.set('page', String(f.page));

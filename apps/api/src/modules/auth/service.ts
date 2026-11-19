@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
 import { unauthorized } from '../../http/errors.js';
-import { signMfaToken } from './mfaCrypto.js';
 import { equaliseTiming, verifyPassword } from './password.js';
 import {
   REFRESH_TTL_SECONDS,
@@ -12,20 +11,11 @@ import {
   verifyRefresh,
 } from './tokens.js';
 
-const publicUser = (u: {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  mustChangePassword: boolean;
-  mfaEnabledAt: Date | null;
-}) => ({
+const publicUser = (u: { id: string; email: string; name: string; role: string }) => ({
   id: u.id,
   email: u.email,
   name: u.name,
   role: u.role,
-  mustChangePassword: u.mustChangePassword,
-  mfaEnabled: Boolean(u.mfaEnabledAt),
 });
 
 export function createAuthService(db: Db, config: Config) {
@@ -60,22 +50,6 @@ export function createAuthService(db: Db, config: Config) {
       }
       const ok = await verifyPassword(user.passwordHash, password);
       if (!ok || !user.active) throw unauthorized('Invalid email or password');
-      // Two-factor is on: the password alone buys only a five-minute step-up token, never a session.
-      if (user.mfaEnabledAt) {
-        return {
-          mfaRequired: true as const,
-          mfaToken: signMfaToken(config.JWT_REFRESH_SECRET, user.id),
-        };
-      }
-      return { user: publicUser(user), ...(await issue(user.id, randomUUID())) };
-    },
-
-    /** The second step: the same session a password-only sign-in would have given. */
-    async loginAfterMfa(userId: string) {
-      const user = await db.appUser.findFirst({
-        where: { id: userId, active: true, deletedAt: null },
-      });
-      if (!user) throw unauthorized();
       return { user: publicUser(user), ...(await issue(user.id, randomUUID())) };
     },
 

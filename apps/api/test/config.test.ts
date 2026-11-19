@@ -9,7 +9,6 @@ describe('loadConfig', () => {
       ADMIN_EMAIL: '',
       ADMIN_PASSWORD: '',
       METRICS_TOKEN: '',
-      MFA_ENCRYPTION_KEY: '',
     });
     expect(c.ADMIN_EMAIL).toBeUndefined();
     expect(c.METRICS_TOKEN).toBeUndefined();

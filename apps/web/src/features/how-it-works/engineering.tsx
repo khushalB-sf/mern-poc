@@ -96,7 +96,7 @@ export const APPROACHES: Approach[] = [
       </>
     ),
     why: 'The history page is built from real rows, and a change and its record can never disagree because they commit together.',
-    tradeoff: 'Authors wait for a reviewer. Concurrent edits are last-write-wins.',
+    tradeoff: 'Authors wait for a reviewer.',
   },
   {
     id: 'soft-delete',
@@ -184,6 +184,52 @@ export const APPROACHES: Approach[] = [
         a shared store is added.
       </>
     ),
+  },
+  {
+    id: 'conflicts',
+    title: 'Two people editing one question: the second save is refused',
+    problem: 'Silently overwriting a colleague’s edit loses work nobody notices is gone.',
+    decision: (
+      <>
+        The edit form remembers the version it opened (<Code>updatedAt</Code>) and sends it back as{' '}
+        <Code>expectedUpdatedAt</Code>. If the question changed in between, the API answers{' '}
+        <Code>409 EDIT_CONFLICT</Code> and the form says so and offers a “Load their version”
+        button. The check runs inside the same row lock as the edit.
+      </>
+    ),
+    why: 'The conflict is shown to the person who can resolve it, at the moment it happens.',
+    tradeoff: 'The second editor has to reapply their change; there is no automatic merge.',
+  },
+  {
+    id: 'notifications',
+    title: 'People are told what happened to their question',
+    problem:
+      'An author should not have to keep opening the list to learn whether a reviewer decided.',
+    decision: (
+      <>
+        A review decision writes a <Code>notification</Code> row in the same transaction. The
+        sidebar shows how many questions wait for a reviewer, how many of yours were rejected and
+        how many notifications are unread. A notification stores only ids and the outcome; the
+        question text is looked up when it is shown, and only while you can still see that question.
+      </>
+    ),
+    why: 'It adds no new way to learn about a restricted question: the visibility rule still applies when the text is read.',
+    tradeoff: 'In the app only: there is no email or push delivery.',
+  },
+  {
+    id: 'audit-trail',
+    title: 'The audit trail can be read, and cannot be changed',
+    problem: 'A record that the application itself can edit proves little.',
+    decision: (
+      <>
+        A database trigger refuses <Code>UPDATE</Code> and <Code>DELETE</Code> on{' '}
+        <Code>audit_event</Code>, even for the application’s own database role. Admins browse the
+        trail (filter by type, person and date, newest first, paged by cursor) and export the same
+        view as CSV; cells that a spreadsheet could run as a formula are defused.
+      </>
+    ),
+    why: 'Immutability is enforced where the data lives, so a bug or a stolen API session cannot rewrite history.',
+    tradeoff: 'A mistaken event cannot be corrected, only followed by another one.',
   },
 ];
 
@@ -279,18 +325,33 @@ export const PRACTICES: PracticeGroup[] = [
     title: 'Testing',
     points: [
       <>
-        <strong>Unit tests</strong> for pure logic with no database: tokens, passwords, the CSRF
-        origin check, the NUL gate, technology name matching, the error handler, tag rules (against
-        a stand-in database).
+        <strong>Unit tests</strong> for pure logic with no database: tokens, password hashing, the
+        CSRF origin check, the NUL gate, technology name matching, the error handler, tag rules
+        (against a stand-in database).
       </>,
       <>
         <strong>Integration tests</strong> run the real Express app against a real Postgres (no
         mocks), in an isolated <Code>qb_test</Code> database that is migrated and truncated by the
-        suite. 450+ API tests.
+        suite.
       </>,
       <>
         <strong>UI tests</strong> with Testing Library find things by role and accessible name, the
-        way a person or a screen reader would, and run axe on the main screens. 170+ web tests.
+        way a person or a screen reader would, and run axe on the main screens.
+      </>,
+      <>
+        <strong>Property tests</strong> (fast-check) try thousands of generated inputs against the
+        small pure helpers: CSV escaping, technology name keys, paging cursors, tokens and the
+        filters-in-the-URL round trip. <strong>Mutation testing</strong> (Stryker) then changes that
+        code on purpose to check the tests notice.
+      </>,
+      <>
+        <strong>A contract test</strong> calls real endpoints and checks every response against the
+        OpenAPI document, including that no field is undocumented.
+      </>,
+      <>
+        <strong>End-to-end tests</strong> drive a real browser (Playwright) through sign-in, who
+        sees what, the review workflow, keyboard use of the filters and an accessibility scan with
+        colour contrast, on their own database and ports.
       </>,
       <>
         <strong>Guards, not just checks:</strong> a route manifest fails the build when a route is
@@ -357,8 +418,8 @@ export const PRACTICES: PracticeGroup[] = [
     points: [
       'One branch per ticket (T-xx) and small commits with a clear prefix (feat, test, fix, docs).',
       'Migrations are committed SQL, applied with Prisma; the seed is deterministic so demos and tests are repeatable.',
-      'Docker Compose runs the database, the API and nginx with health checks; the API runs as a non-root user.',
-      'Structured JSON logs (pino) with server-made request ids and redacted cookies and tokens; a health endpoint; configuration validated at start so a bad deploy fails immediately.',
+      'Docker Compose runs the database, a one-shot migrate job, the API and nginx with health checks; the API runs as a non-root user and its image has no Prisma CLI. An optional profile adds a TLS front door (Caddy).',
+      'Structured JSON logs (pino) with server-made request ids and redacted cookies and tokens; liveness and readiness endpoints and token-protected Prometheus metrics; configuration validated at start so a bad deploy fails immediately.',
       'Performance is measured, not guessed: query plans were captured for each role, and an index hint was added only after the planner was shown to pick a 72 ms plan over a 6 ms one.',
     ],
   },

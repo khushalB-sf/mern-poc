@@ -6,11 +6,6 @@ export interface User {
   email: string;
   name: string;
   role: Role;
-  /** An admin set the password: nothing but changing it works until it is changed. */
-  mustChangePassword?: boolean;
-  mfaEnabled?: boolean;
-  /** Two-factor is required of admins and this one has not set it up: only the account page works. */
-  mfaEnrollmentRequired?: boolean;
 }
 
 export interface TagRef {

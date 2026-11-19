@@ -5,3 +5,9 @@ coverage/
 *.log
 .DS_Store
 apps/api/src/generated/
+
+# Mutation testing
+.stryker-tmp/
+reports/
+test-results/
+playwright-report/

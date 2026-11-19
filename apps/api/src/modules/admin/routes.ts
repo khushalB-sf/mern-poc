@@ -7,27 +7,27 @@ import { validateBody, validateParams, validateQuery } from '../../http/validate
 import { recordBase } from '../../http/metrics.js';
 import { auditRoutes } from './audit.js';
 import { addTag, listTagCategories, renameTag, setTagArchived } from './tags.js';
-import { createResetLink } from '../auth/credentials.js';
-import { createMfa } from '../auth/mfa.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import {
   clientImpact,
   createClient,
-  createUser,
   deleteClient,
-  deleteUser,
   listClients,
   listDeletedQuestionsForAdmin,
-  listUsers,
   restoreClient,
-  restoreUser,
   restoreDeletedQuestion,
-  setUserClients,
   updateClient,
+} from './departments.js';
+import {
+  createUser,
+  deleteUser,
+  listUsers,
+  restoreUser,
+  setUserClients,
   updateUser,
   type NewUser,
   type UserPatch,
-} from './service.js';
+} from './users.js';
 import {
   addDepartmentTechnology,
   listDepartmentTechnologies,
@@ -97,17 +97,6 @@ export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
 
   router.get('/users', validateQuery(userListQuery), async (_req, res) => {
     res.json(await listUsers(db, res.locals.query as z.infer<typeof userListQuery>));
-  });
-
-  router.post('/users/:id/mfa-reset', validateParams(idParams), async (req, res) => {
-    const { id } = res.locals.params as z.infer<typeof idParams>;
-    await createMfa(db, config).adminReset(req.log, req.user!, id);
-    res.status(204).end();
-  });
-
-  router.post('/users/:id/reset-link', validateParams(idParams), async (req, res) => {
-    const { id } = res.locals.params as z.infer<typeof idParams>;
-    res.status(201).json(await createResetLink(db, req.log, req.user!, id));
   });
 
   router.post('/users/:id/restore', validateParams(idParams), async (req, res) => {

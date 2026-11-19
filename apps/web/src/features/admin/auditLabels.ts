@@ -24,12 +24,6 @@ export const AUDIT_LABEL: Record<string, string> = {
   TAG_UNLINKED: 'Technology removed from a department',
   TAG_ARCHIVED: 'Technology archived',
   TAG_RESTORED: 'Technology restored',
-  PASSWORD_CHANGED: 'Password changed',
-  PASSWORD_RESET_LINK_CREATED: 'Password reset link created',
-  PASSWORD_RESET_USED: 'Password reset link used',
-  MFA_ENABLED: 'Two-factor turned on',
-  MFA_DISABLED: 'Two-factor turned off',
-  MFA_RESET: 'Two-factor reset by an admin',
 };
 
 /** The few facts worth reading at a glance; the full payload is one click away. */

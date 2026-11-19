@@ -149,7 +149,7 @@ export const FEATURES: Feature[] = [
       {
         title: 'You type in the search box or tick a tag filter',
         detail:
-          'The box waits 300 ms after you stop typing. The search and filters are then put in the page address, so a search can be bookmarked or shared.',
+          'The box waits 300 ms after you stop typing. The search and filters, including “My questions” for Authors and Admins, are then put in the page address, so a search can be bookmarked or shared. The filter dropdowns also work from the keyboard: Down opens one, the arrow keys, Home and End move between options, typing a letter jumps to a matching one and Space ticks it.',
         where: 'web · features/questions/QuestionListPage.tsx, FilterBar.tsx',
       },
       {
@@ -175,7 +175,7 @@ export const FEATURES: Feature[] = [
           SESSION,
           RATE,
           {
-            text: 'The query has the right shape: q up to 200 characters, limit 1 to 50, no unknown fields.',
+            text: 'The query has the right shape: q up to 200 characters, limit 1 to 50, offset 0 to 10,000 (deeper than that, the list asks you to narrow your search), no unknown fields.',
             fail: '400 VALIDATION_ERROR',
           },
         ],
@@ -333,7 +333,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       {
         title: 'The service checks the rules, cheapest first',
         detail:
-          'A rejected duplicate is written to the audit table in its own commit, so the attempt leaves a trace even though no question is created.',
+          'The duplicate check runs inside the transaction, after taking a lock on the normalised text, so two people saving the same question at the same moment cannot both pass it. A rejected duplicate is written to the audit table in its own commit, so the attempt leaves a trace even though no question is created.',
         where: 'api · modules/questions/service.ts → createQuestion()',
         checks: [
           {
@@ -389,7 +389,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       {
         title: 'You change a question and click Save changes',
         detail:
-          'Edit question shows only for an Author on a question they wrote, or for an Admin. A question’s department cannot be changed. An Author’s save sends it back for review.',
+          'Edit question shows only for an Author on a question they wrote, or for an Admin. A question’s department cannot be changed. An Author’s save sends it back for review. The form remembers which version of the question it opened.',
         where: 'web · features/questions/QuestionFormPage.tsx, auth/hooks.ts → canEdit()',
       },
       {
@@ -397,8 +397,10 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
         detail: (
           <>
             <Code>useUpdateQuestion</Code> calls <Code>PATCH /api/questions/:id</Code> with text,
-            notes and tags. <Code>clientId</Code> is not part of the request. On success the cached
-            lists, the question and its history are marked stale.
+            notes and tags, plus <Code>expectedUpdatedAt</Code> (the version you opened) and, after
+            you chose to save past a near-duplicate, <Code>confirmNotDuplicate</Code>.{' '}
+            <Code>clientId</Code> is not part of the request. On success the cached lists, the
+            question and its history are marked stale.
           </>
         ),
         where: 'web · features/questions/hooks.ts, api.ts',
@@ -412,7 +414,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
           SESSION,
           RATE,
           {
-            text: 'The id is a UUID, and the body holds at least one of text, answerNotes and tags, and nothing else.',
+            text: 'The id is a UUID, and the body holds at least one of text, answerNotes and tags, and nothing beyond those and the two optional fields above.',
             fail: '400 VALIDATION_ERROR',
           },
         ],
@@ -428,13 +430,22 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
             fail: '403 FORBIDDEN',
           },
           {
+            text: 'The question is still the version you opened (expectedUpdatedAt). If someone saved first, your edit is refused and the form offers “Load their version”.',
+            fail: '409 EDIT_CONFLICT',
+          },
+          {
             text: 'Something actually changed. If not, the question comes back untouched and nothing is recorded.',
+          },
+          {
+            text: 'A changed text is checked for near-duplicates like a new question (same lock, same 0.6 rule), never against itself.',
+            fail: '409 DUPLICATE_SUSPECTED',
           },
         ],
       },
       {
         title: 'Database: update and audit commit together',
-        detail: 'The history list on the question page is built from these audit rows.',
+        detail:
+          'The question is row-locked for the whole transaction, so the freshness check and the update cannot be separated by another save. The history list on the question page is built from these audit rows.',
         where: 'api · modules/questions/question.repo.ts → updateQuestionRow()',
         rows: [
           { table: 'question', action: 'UPDATE', row: 'the changed columns · updated_at = now' },
@@ -448,6 +459,11 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
             table: 'audit_event',
             action: 'INSERT',
             row: 'type = QUESTION_UPDATED · payload = { changes: { text: { from, to } } }',
+          },
+          {
+            table: 'audit_event',
+            action: 'INSERT',
+            row: 'type = DUPLICATE_OVERRIDDEN, only when you saved past a match',
           },
         ],
       },
@@ -510,7 +526,8 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       },
       {
         title: 'Database: the decision and its record commit together',
-        detail: 'The review note and reviewer are shown on the question and in its history.',
+        detail:
+          'The review note and reviewer are shown on the question and in its history. The author sees the outcome in the sidebar count and on the Notifications page.',
         where: 'api · modules/questions/question.repo.ts → setReviewDecision()',
         rows: [
           { table: 'question', action: 'READ', row: 'FOR UPDATE: the row lock' },
@@ -523,6 +540,11 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
             table: 'audit_event',
             action: 'INSERT',
             row: 'type = QUESTION_APPROVED or QUESTION_REJECTED · payload = { note }',
+          },
+          {
+            table: 'notification',
+            action: 'INSERT',
+            row: 'tells the author (not when they decided it themselves): user_id, question_id, the outcome. Ids only, no question text.',
           },
         ],
       },
