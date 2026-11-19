@@ -5,9 +5,10 @@ import { Icon } from '../../shared/ui/Icon';
 import { Page, PageHeader } from '../../shared/ui/Page';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
-import { ApproachPanel, PathPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
+import { ApproachPanel, DecisionsPanel, PathPanel, SecurityPanel } from './EngineeringPanels';
 import { FeatureWalkthrough } from './FeatureWalkthrough';
 import { ErDiagram, RELATIONSHIPS } from './ErDiagram';
+import { JourneyDiagram, StartPanel } from './StartHere';
 import { Code, Flow } from './Flow';
 import { MindMap } from './MindMap';
 import { RequestFlowDiagram } from './RequestFlowDiagram';
@@ -81,8 +82,8 @@ function RolesPanel() {
         </table>
       </div>
       <p className="text-sm text-ink-soft">
-        The buttons you see in the interface follow this table, but they are only a convenience. The
-        API enforces every rule, including for requests that never touch the interface.
+        The buttons you see follow this table, but they are only a convenience. The API (the server)
+        enforces every rule, even for requests that never use the interface.
       </p>
     </Detail>
   );
@@ -132,9 +133,9 @@ function GrantsPanel() {
         </table>
       </div>
       <p className="text-sm text-ink-soft">
-        A restricted question carries this badge: <ClientBadge name="MERN" />. Reviewers get no
-        exception: without a grant, a Reviewer cannot see or review that department. Only an Admin
-        sees every department.
+        A grant is permission to see one department’s questions. A restricted question carries this
+        badge: <ClientBadge name="MERN" />. Reviewers get no exception: without a grant, a Reviewer
+        cannot see or review that department. Only an Admin sees every department.
       </p>
     </Detail>
   );
@@ -145,9 +146,9 @@ function FlowPanel() {
     <Detail>
       <RequestFlowDiagram />
       <p className="max-w-3xl text-sm text-ink-soft">
-        Checks that need no data run first and are cheap. The ones that need the database run last,
-        once the request has passed every gate. Business rules live only in the service, never in
-        the route.
+        Checks that need no data run first, because they are cheap. Checks that need the database
+        run last, after the request has passed every other gate. Business rules (the app’s own
+        rules, such as who may approve a question) live only in the service, never in the route.
       </p>
 
       <div>
@@ -170,7 +171,10 @@ function FlowPanel() {
             </thead>
             <tbody>
               {STATUS_ROWS.map((r) => (
-                <tr key={r.status} className="border-b border-line align-top last:border-b-0">
+                <tr
+                  key={`${r.status}-${r.code}`}
+                  className="border-b border-line align-top last:border-b-0"
+                >
                   <th scope="row" className="whitespace-nowrap px-3 py-2 font-normal">
                     <span className="font-semibold">{r.status}</span>{' '}
                     <span className="font-mono text-xs text-ink-soft">{r.code}</span>
@@ -207,7 +211,7 @@ function FlowPanel() {
             </thead>
             <tbody>
               {TRACES.map((t) => (
-                <tr key={t.who} className="border-b border-line align-top last:border-b-0">
+                <tr key={t.request} className="border-b border-line align-top last:border-b-0">
                   <th scope="row" className="px-3 py-2 font-medium">
                     {t.who}
                   </th>
@@ -234,8 +238,9 @@ function DecisionPanel() {
       </div>
       <p className="max-w-3xl text-sm text-ink-soft">
         That is why a hidden question answers 404 and never 403: a 403 would tell a probing user the
-        question is there. For the same reason there is no unique constraint on question text, and
-        the duplicate check only looks at questions you can see.
+        question is there. For the same reason there is no unique constraint on question text (a
+        database rule that refuses repeated values). The duplicate check also only looks at
+        questions you can see.
       </p>
     </Detail>
   );
@@ -292,8 +297,8 @@ function DatabasePanel() {
           Database diagram
         </h3>
         <p className="mb-3 mt-1 text-sm text-ink-soft">
-          Every table, its key columns and how the tables point at each other. A line runs from the
-          one side to the many side.
+          Every table, its key columns and how the tables point at each other. A line joins two
+          tables. It runs from the “one” side to the “many” side.
         </p>
         <ErDiagram />
         <h3 className="mt-6 font-semibold">How the tables connect, in words</h3>
@@ -318,8 +323,8 @@ function DatabasePanel() {
             {VISIBLE_SQL}
           </pre>
           <p className="mt-2 text-sm text-ink-soft">
-            It sits in the same statement as the filters, the search, the count and the paging.
-            Hidden rows are never fetched, counted or ranked.
+            This rule sits in the same SQL statement as the filters, the search, the count and the
+            paging (page-by-page results). Hidden rows are never fetched, counted or ranked.
           </p>
         </div>
       </div>
@@ -333,9 +338,11 @@ function SessionPanel() {
       id: 'cookies',
       body: (
         <>
-          Signing in sets two <strong>httpOnly, SameSite=Strict</strong> cookies. Page scripts
-          cannot read them. The access token lasts 15 minutes and is sent to <Code>/api</Code>; the
-          refresh token lasts 7 days and is sent only to <Code>/api/auth</Code>.
+          Signing in sets two <strong>httpOnly, SameSite=Strict</strong> cookies. Each holds a
+          token, a small signed piece of text that proves who you are. Page scripts cannot read the
+          cookies, and the browser sends them only for requests from this site. The access token
+          lasts 15 minutes and is sent to <Code>/api</Code>. The refresh token lasts 7 days and is
+          sent only to <Code>/api/auth</Code>.
         </>
       ),
     },
@@ -344,8 +351,8 @@ function SessionPanel() {
       body: (
         <>
           The access token carries your user id and the id of your session. Role and active status
-          are read from the database on each request, and the token stops working the moment its
-          session is revoked.
+          are read from the database on each request. The token stops working the moment its session
+          is revoked (ended).
         </>
       ),
     },
@@ -353,8 +360,8 @@ function SessionPanel() {
       id: 'refresh',
       body: (
         <>
-          On a 401 the app refreshes the session once and retries. Each refresh token works one
-          time. Replaying a used one revokes the whole session.
+          When the API answers 401 (not signed in), the app refreshes the session once and retries.
+          Each refresh token works one time. Replaying a used one revokes the whole session.
         </>
       ),
     },
@@ -362,9 +369,9 @@ function SessionPanel() {
       id: 'signin',
       body: (
         <>
-          Sign-in answers the same error for an unknown email, a wrong password and a disabled
-          account. It is rate-limited per address and email, and per address across all emails, so
-          trying a different email each time does not help.
+          Sign-in gives the same error for an unknown email, a wrong password and a disabled
+          account. It is rate-limited (capped per minute) per IP address and email, and per IP
+          address across all emails. So trying a different email each time does not help.
         </>
       ),
     },
@@ -372,7 +379,7 @@ function SessionPanel() {
       id: 'revoke',
       body: (
         <>
-          Resetting a password, deactivating or deleting an account ends all of that person’s
+          Resetting a password, or deactivating or deleting an account, ends all of that person’s
           sessions at once. The last active admin cannot be removed.
         </>
       ),
@@ -392,7 +399,7 @@ function SessionPanel() {
   );
 }
 
-const TABS: {
+const ALL_TABS: {
   id: string;
   label: string;
   title: string;
@@ -400,59 +407,66 @@ const TABS: {
   Body: () => ReactNode;
 }[] = [
   {
+    id: 'start',
+    label: 'Start here',
+    title: 'New to backend work? Start here',
+    lead: 'What happens when you click something, in six plain steps, and what the words used on the other tabs mean.',
+    Body: StartPanel,
+  },
+  {
     id: 'features',
     label: 'Feature by feature',
     title: 'From one click to the database',
-    lead: 'Pick a feature. Every one follows the same five layers, from what the person does on screen to the rows that change in Postgres.',
+    lead: 'Pick a feature. Every one follows the same five layers, from what the person does on screen to the rows that change in the Postgres database.',
     Body: FeatureWalkthrough,
   },
   {
     id: 'path',
     label: 'Learning path',
     title: 'The app through the Full Stack 101 path',
-    lead: 'The five stages of the React to Full Stack 101 path, mapped to the code that does each one, then every feature with the rules it enforces and the tests that prove them.',
+    lead: 'The five stages of the React to Full Stack 101 path, each mapped to the code that does it. Then every feature, with the rules it enforces and the tests that prove them.',
     Body: PathPanel,
   },
   {
     id: 'roles',
     label: 'Roles',
     title: 'Roles: what you can do',
-    lead: 'Every account has one global role. It does not depend on the department.',
+    lead: 'Every account has one global role, which applies everywhere. It does not depend on the department.',
     Body: RolesPanel,
   },
   {
     id: 'grants',
     label: 'Grants',
     title: 'Grants: what you can see',
-    lead: 'Everyone sees global questions. A grant adds one department’s questions on top.',
+    lead: 'A global question belongs to no department, so every signed-in person can see it once it is approved. A grant adds one department’s questions on top.',
     Body: GrantsPanel,
   },
   {
     id: 'flow',
     label: 'Request flow',
     title: 'The path of one request',
-    lead: 'One request, left to right, and what each gate answers when it refuses. Red boxes are the refusals.',
+    lead: 'This diagram follows one request from left to right. Each gate is a check. When a gate refuses, the red box shows its answer.',
     Body: FlowPanel,
   },
   {
     id: 'decision',
     label: 'The decision',
     title: 'The decision, in order',
-    lead: 'The same three checks run for every request. Because visibility comes before role, a rejected request never confirms that a hidden question exists.',
+    lead: 'The same three checks run for every request, always in this order. Visibility comes before role, so a refused request never confirms that a hidden question exists.',
     Body: DecisionPanel,
   },
   {
     id: 'pipeline',
     label: 'Request pipeline',
     title: 'What happens to a request',
-    lead: 'From the browser to the database, in the order the code runs. Red tags show what a step answers when it refuses the request.',
+    lead: 'A request is what the browser sends to the server. This is its journey from the browser to the database, in the order the code runs. Red tags show what a step answers when it refuses the request.',
     Body: PipelinePanel,
   },
   {
     id: 'operations',
     label: 'Each operation',
     title: 'Each operation, step by step',
-    lead: 'The route handler is the same shape every time. What differs is the service and the SQL behind it.',
+    lead: 'Every route handler (the function that answers one URL) has the same shape. What differs is the service and the SQL behind it.',
     Body: OperationsPanel,
   },
   {
@@ -461,10 +475,11 @@ const TABS: {
     title: 'Database and Prisma',
     lead: (
       <>
-        PostgreSQL, accessed through Prisma. Prisma does not enforce visibility: the predicate below
-        is written in SQL, and every read of the <Code>question</Code> table goes through one
-        module, <Code>question.repo.ts</Code>. A test fails if any other file touches the table.
-        Writes use the Prisma client inside a transaction.
+        The data lives in PostgreSQL. The app reaches it through Prisma, a library that lets code
+        talk to the database. Prisma does not enforce visibility. The rule below is written in SQL,
+        and every read of the <Code>question</Code> table goes through one module,{' '}
+        <Code>question.repo.ts</Code>. A test fails if any other file touches the table. Writes use
+        the Prisma client inside a transaction (a group of changes that all succeed or all fail).
       </>
     ),
     Body: DatabasePanel,
@@ -473,31 +488,40 @@ const TABS: {
     id: 'session',
     label: 'Sessions',
     title: 'Sessions and cookies',
-    lead: 'How the API knows who you are.',
+    lead: 'How the API knows who you are, without asking for your password on every request.',
     Body: SessionPanel,
   },
   {
     id: 'approach',
     label: 'Approach',
     title: 'The implementation approach',
-    lead: 'The decisions that shape the system, each with the problem it solves, why it was chosen and what it costs.',
+    lead: 'The decisions that shape the system. Each one has the problem it solves, why it was chosen and what it costs.',
     Body: ApproachPanel,
+  },
+  {
+    id: 'decisions',
+    label: 'Technical decisions',
+    title: 'Every technical decision, and why',
+    lead: 'From the repository layout and folder structure to the database design, the backend, the frontend and delivery. For each choice: what was chosen, why, what was rejected and what it costs.',
+    Body: DecisionsPanel,
   },
   {
     id: 'security',
     label: 'Security',
     title: 'Security: what defends it, and the test that proves it',
-    lead: 'Every defence below is in the code and paired with the test that proves it. A red-team pass tried to break the system; what it found was fixed.',
+    lead: 'Every defence below is in the code and paired with the test that proves it. A red-team pass (a deliberate attempt to break the system) found problems, and they were fixed.',
     Body: SecurityPanel,
   },
-  {
-    id: 'practices',
-    label: 'Engineering practices',
-    title: 'How the work is done',
-    lead: 'Testing, test-driven development, code quality, accessibility, documentation and delivery: the habits behind the code.',
-    Body: PracticesPanel,
-  },
 ];
+
+// Reading order for a newcomer: orient, learn the one rule, see how a request runs, then why it is built this way.
+const GROUPS = [
+  { title: '1 · Get oriented', ids: ['start', 'features', 'path'] },
+  { title: '2 · The core rule', ids: ['roles', 'grants', 'decision', 'flow'] },
+  { title: '3 · Under the hood', ids: ['session', 'pipeline', 'operations', 'database'] },
+  { title: '4 · Why it is built this way', ids: ['approach', 'decisions', 'security'] },
+].map((g) => ({ ...g, tabs: g.ids.map((id) => ALL_TABS.find((t) => t.id === id)!) }));
+const TABS = GROUPS.flatMap((g) => g.tabs);
 
 export function HowItWorksPage() {
   useDocumentTitle('How it works');
@@ -533,10 +557,11 @@ export function HowItWorksPage() {
         description={
           <>
             Two separate questions decide everything.{' '}
-            <strong className="text-ink">What can you see?</strong> is answered by department
-            grants. <strong className="text-ink">What can you change?</strong> is answered by your
-            role. Visibility is always checked first, in the database. The last three tabs cover the
-            approach, the security model and the engineering practices behind it.
+            <strong className="text-ink">What can you see?</strong> Your department grants answer
+            that. <strong className="text-ink">What can you change?</strong> Your role answers that.
+            The app always checks visibility first, in the database. Read the groups below left to
+            right, top to bottom: each one builds on the last. The last tabs cover the approach,
+            every technical decision, and the security model.
           </>
         }
       />
@@ -546,30 +571,39 @@ export function HowItWorksPage() {
         aria-label="How it works"
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="flex flex-wrap gap-2"
+        className="grid gap-x-6 gap-y-3 sm:grid-cols-2"
       >
-        {TABS.map((t) => {
-          const on = t.id === active;
-          return (
-            <button
-              key={t.id}
-              id={`tab-${t.id}`}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={on ? 0 : -1}
-              onClick={() => select(t.id)}
-              className={
-                on
-                  ? 'flex-none whitespace-nowrap rounded-full border border-accent bg-accent-soft px-4 py-1.5 text-sm font-medium'
-                  : 'flex-none whitespace-nowrap rounded-full border border-line px-4 py-1.5 text-sm text-ink-soft hover:text-ink'
-              }
-            >
-              {t.label}
-            </button>
-          );
-        })}
+        {GROUPS.map((g) => (
+          <div key={g.title}>
+            <div aria-hidden="true" className="mb-1.5 text-xs font-medium uppercase text-ink-soft">
+              {g.title}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {g.tabs.map((t) => {
+                const on = t.id === active;
+                return (
+                  <button
+                    key={t.id}
+                    id={`tab-${t.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    aria-controls={`panel-${t.id}`}
+                    tabIndex={on ? 0 : -1}
+                    onClick={() => select(t.id)}
+                    className={
+                      on
+                        ? 'flex-none whitespace-nowrap rounded-full border border-accent bg-accent-soft px-4 py-1.5 text-sm font-medium'
+                        : 'flex-none whitespace-nowrap rounded-full border border-line px-4 py-1.5 text-sm text-ink-soft hover:text-ink'
+                    }
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {TABS.map(({ id, title, lead, Body }) => (
@@ -585,7 +619,7 @@ export function HowItWorksPage() {
           <h2 className="font-serif text-2xl font-semibold">{title}</h2>
           <p className="mt-2 max-w-3xl text-ink-soft">{lead}</p>
           <div className="mt-5">
-            <MindMap data={MIND_MAPS[id]!} />
+            {id === 'start' ? <JourneyDiagram /> : <MindMap data={MIND_MAPS[id]!} />}
           </div>
           <Body />
         </section>

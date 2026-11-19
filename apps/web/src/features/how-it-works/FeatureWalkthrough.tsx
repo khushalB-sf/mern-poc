@@ -3,6 +3,11 @@ import { Button } from '../../shared/ui/Button';
 import { cx } from '../../shared/ui/cx';
 import { Icon } from '../../shared/ui/Icon';
 import { FEATURES, LAYERS, type DbRow, type Stage } from './features';
+import { FEATURE_JOURNEYS } from './featureJourneys';
+import { JourneyFlow } from './JourneyFlow';
+
+// Which box of the picture to light for each of the five steps: screen, browser, gates, rules, database.
+const ACTIVE_NODE = [0, 0, 1, 1, 2] as const;
 import { Code, FailChip } from './Flow';
 
 const WRITES: DbRow['action'][] = ['INSERT', 'UPDATE', 'DELETE'];
@@ -136,21 +141,13 @@ export function FeatureWalkthrough() {
           {feature.outcome}
         </p>
 
-        <ol aria-hidden="true" className="mt-4 flex flex-wrap items-center gap-1.5 text-xs">
-          {LAYERS.map((l, i) => (
-            <li key={l.id} className="flex items-center gap-1.5">
-              <span
-                className={cx(
-                  'rounded-full border px-2.5 py-1',
-                  step === i ? 'border-accent bg-accent-soft font-semibold' : 'border-line',
-                )}
-              >
-                {l.label}
-              </span>
-              {i < LAYERS.length - 1 && <Icon name="chevronRight" className="text-control" />}
-            </li>
-          ))}
-        </ol>
+        <div className="mt-4">
+          <JourneyFlow
+            journey={FEATURE_JOURNEYS[feature.id]!}
+            label={`${feature.label}: overview`}
+            active={step === null ? null : ACTIVE_NODE[step]}
+          />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

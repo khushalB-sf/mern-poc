@@ -46,7 +46,7 @@ export async function createQuestion(
 ): Promise<QuestionView> {
   if (input.clientId) {
     // Ungranted (or deleted) looks exactly like nonexistent: no client-existence oracle. Admins need no grant.
-    const client = await db.client.findFirst({
+    const client = await db.department.findFirst({
       where: {
         id: input.clientId,
         deletedAt: null,

@@ -59,8 +59,8 @@ export async function resolveTagGroups(db: Queryable, tags: string[]): Promise<s
 /**
  * Flat, de-duplicated tag ids for writes (same validation as filters: unknown tags are a 400).
  * - An archived tag cannot be newly attached.
- * - On a department question, a technology must be one of that department's (`clientId`). A global
- *   question (`clientId` null) may use any active technology.
+ * - On a department question, a technology must be one of that department's (`departmentId`). A global
+ *   question (`departmentId` null) may use any active technology.
  * `alreadyOn` lists the "category:value" tags the question already carries; those stay allowed, so an
  * edit does not fail on a tag archived or unlinked after the fact.
  */
@@ -68,7 +68,7 @@ export async function resolveTagIds(
   db: Queryable,
   tags: string[],
   alreadyOn: string[] = [],
-  clientId: string | null = null,
+  departmentId: string | null = null,
 ): Promise<string[]> {
   const ids = [...new Set((await resolveTagGroups(db, tags)).flat())];
   if (ids.length === 0) return ids;
@@ -87,12 +87,12 @@ export async function resolveTagIds(
       `Tag no longer available: ${archived.map(name).join(', ')}`,
     );
   }
-  if (clientId) {
+  if (departmentId) {
     const technologies = fresh.filter((t) => t.category.slug === 'technology');
     const linked = new Set(
       (
-        await db.clientTag.findMany({
-          where: { clientId, tagId: { in: technologies.map((t) => t.id) } },
+        await db.departmentTag.findMany({
+          where: { departmentId, tagId: { in: technologies.map((t) => t.id) } },
           select: { tagId: true },
         })
       ).map((l) => l.tagId),
@@ -118,7 +118,7 @@ export async function orphanTagIds(db: Queryable): Promise<Set<string>> {
     where: {
       category: { slug: 'technology' },
       archivedAt: null,
-      clients: { none: { client: { deletedAt: null } } },
+      departments: { none: { department: { deletedAt: null } } },
     },
     select: { id: true },
   });
@@ -135,9 +135,9 @@ export async function filterTechnologyIds(
   actor: Actor,
 ): Promise<Set<string> | null> {
   if (actor.role === 'ADMIN') return null;
-  const links = await db.clientTag.findMany({
+  const links = await db.departmentTag.findMany({
     where: {
-      client: { deletedAt: null, grants: { some: { userId: actor.id } } },
+      department: { deletedAt: null, grants: { some: { userId: actor.id } } },
       tag: { archivedAt: null },
     },
     select: { tagId: true },

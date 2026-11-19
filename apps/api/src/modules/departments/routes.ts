@@ -3,13 +3,13 @@ import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
 import { requireAuth } from '../auth/middleware.js';
 
-export function clientRoutes(db: Db, config: Config, limit: RequestHandler) {
+export function departmentRoutes(db: Db, config: Config, limit: RequestHandler) {
   const router = Router();
   router.use(requireAuth(db, config), limit);
 
   // Only clients the caller is granted (admins: all): other clients' existence is never disclosed.
   router.get('/', async (req, res) => {
-    const clients = await db.client.findMany({
+    const clients = await db.department.findMany({
       where: {
         deletedAt: null,
         ...(req.user!.role === 'ADMIN' ? {} : { grants: { some: { userId: req.user!.id } } }),

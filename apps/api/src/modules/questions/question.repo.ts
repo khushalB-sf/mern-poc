@@ -66,7 +66,7 @@ const SEARCH_VECTOR = Prisma.raw(
 );
 
 /**
- * The single visibility rule. Department (client) grants always apply, except to ADMIN, who sees everything.
+ * The single visibility rule. Department grants always apply, except to ADMIN, who sees everything.
  * On top of that, status limits what each role may read:
  *   USER     approved only            AUTHOR   approved + their own, at any status
  *   REVIEWER every status (they decide, and need to see what they decided)
@@ -75,12 +75,12 @@ const SEARCH_VECTOR = Prisma.raw(
 const visible = (actor: Actor) => {
   // Soft-deleted questions, and questions of a soft-deleted department, are gone for everyone, admins included.
   const live = Prisma.sql`(q.deleted_at IS NULL AND NOT EXISTS (
-    SELECT 1 FROM client dc WHERE dc.id = q.client_id AND dc.deleted_at IS NOT NULL
+    SELECT 1 FROM department dc WHERE dc.id = q.department_id AND dc.deleted_at IS NOT NULL
   ))`;
   if (actor.role === 'ADMIN') return live;
   const granted = Prisma.sql`(
-    q.client_id IS NULL
-    OR EXISTS (SELECT 1 FROM client_grant g WHERE g.user_id = ${actor.id}::uuid AND g.client_id = q.client_id)
+    q.department_id IS NULL
+    OR EXISTS (SELECT 1 FROM department_grant g WHERE g.user_id = ${actor.id}::uuid AND g.department_id = q.department_id)
   )`;
   switch (actor.role) {
     case 'REVIEWER':
@@ -94,14 +94,14 @@ const visible = (actor: Actor) => {
 
 const SELECT = Prisma.sql`
   SELECT q.id, q."text", q.answer_notes AS "answerNotes", q.created_at AS "createdAt",
-         q.updated_at AS "updatedAt", q.client_id AS "clientId", c.name AS "clientName",
+         q.updated_at AS "updatedAt", q.department_id AS "clientId", c.name AS "clientName",
          q.author_id AS "authorId", u.name AS "authorName", q.status,
          q.review_note AS "reviewNote", q.reviewed_at AS "reviewedAt",
          q.reviewed_by_id AS "reviewerId", rv.name AS "reviewerName"
   FROM question q
   JOIN app_user u ON u.id = q.author_id
   LEFT JOIN app_user rv ON rv.id = q.reviewed_by_id
-  LEFT JOIN client c ON c.id = q.client_id`;
+  LEFT JOIN department c ON c.id = q.department_id`;
 
 async function withTags(db: Queryable, rows: Row[]): Promise<QuestionView[]> {
   const tagRows = rows.length
@@ -141,7 +141,7 @@ async function withTags(db: Queryable, rows: Row[]): Promise<QuestionView[]> {
 
 export async function searchQuestions(db: Queryable, actor: Actor, f: SearchFilters) {
   const conditions = [visible(actor)];
-  if (f.clientId) conditions.push(Prisma.sql`q.client_id = ${f.clientId}::uuid`);
+  if (f.clientId) conditions.push(Prisma.sql`q.department_id = ${f.clientId}::uuid`);
   if (f.status) conditions.push(Prisma.sql`q.status = ${f.status}::"QuestionStatus"`);
   if (f.mine) conditions.push(Prisma.sql`q.author_id = ${actor.id}::uuid`);
   if (f.q) {
@@ -241,7 +241,7 @@ export async function insertQuestion(
       text: data.text,
       answerNotes: data.answerNotes,
       authorId: data.authorId,
-      clientId: data.clientId,
+      departmentId: data.clientId,
       ...(data.approvedBy && {
         status: 'APPROVED' as const,
         reviewedById: data.approvedBy,
@@ -329,7 +329,7 @@ export async function globalTagIds(db: Queryable): Promise<Set<string>> {
     SELECT DISTINCT qt.tag_id AS id
     FROM question_tag qt
     JOIN question q ON q.id = qt.question_id
-    WHERE q.deleted_at IS NULL AND q.client_id IS NULL`;
+    WHERE q.deleted_at IS NULL AND q.department_id IS NULL`;
   return new Set(rows.map((r) => r.id));
 }
 
@@ -359,7 +359,7 @@ export async function listDeletedQuestions(
       status: true,
       deletedAt: true,
       author: { select: { id: true, name: true } },
-      client: { select: { id: true, name: true, deletedAt: true } },
+      department: { select: { id: true, name: true, deletedAt: true } },
     },
   });
   const page = rows.slice(0, f.limit);
@@ -371,9 +371,9 @@ export async function listDeletedQuestions(
       status: r.status,
       deletedAt: r.deletedAt!,
       author: r.author,
-      department: r.client ? { id: r.client.id, name: r.client.name } : null,
+      department: r.department ? { id: r.department.id, name: r.department.name } : null,
       // Still hidden after a restore until its department is restored too.
-      departmentDeleted: r.client?.deletedAt != null,
+      departmentDeleted: r.department?.deletedAt != null,
     })),
     nextCursor:
       rows.length > f.limit && last ? encodeCursor([last.deletedAt!.toISOString(), last.id]) : null,
@@ -384,14 +384,14 @@ export async function listDeletedQuestions(
 export async function restoreQuestion(db: Queryable, id: string) {
   const row = await db.question.findFirst({
     where: { id, deletedAt: { not: null } },
-    select: { text: true, client: { select: { name: true, deletedAt: true } } },
+    select: { text: true, department: { select: { name: true, deletedAt: true } } },
   });
   if (!row) throw notFound('Deleted question not found');
-  if (row.client?.deletedAt) {
+  if (row.department?.deletedAt) {
     throw new AppError(
       409,
       'DEPARTMENT_DELETED',
-      `Restore the ${row.client.name} department first`,
+      `Restore the ${row.department.name} department first`,
     );
   }
   await db.question.update({ where: { id }, data: { deletedAt: null } });
@@ -399,8 +399,8 @@ export async function restoreQuestion(db: Queryable, id: string) {
 }
 
 /** What deleting a department hides: its live questions (and how many still await review). */
-export async function departmentImpact(db: Queryable, clientId: string) {
-  const live = { clientId, deletedAt: null };
+export async function departmentImpact(db: Queryable, departmentId: string) {
+  const live = { departmentId, deletedAt: null };
   const [questions, pending] = await Promise.all([
     db.question.count({ where: live }),
     db.question.count({ where: { ...live, status: 'PENDING' } }),
@@ -418,7 +418,10 @@ export async function tagUsageCounts(
     by: ['tagId'],
     where: {
       ...(tagIds && { tagId: { in: tagIds } }),
-      question: { deletedAt: null, OR: [{ clientId: null }, { client: { deletedAt: null } }] },
+      question: {
+        deletedAt: null,
+        OR: [{ departmentId: null }, { department: { deletedAt: null } }],
+      },
     },
     _count: { _all: true },
   });

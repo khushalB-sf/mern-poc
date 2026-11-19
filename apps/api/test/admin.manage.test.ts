@@ -701,13 +701,13 @@ describe('department technologies', () => {
     await adminCall('delete', `/clients/${world.acme.id}`).expect(204);
     const archived = await db.tag.findUniqueOrThrow({ where: { id: react() } });
     expect(archived.archivedAt).not.toBeNull();
-    expect(archived.archivedByClientId).toBe(world.acme.id);
+    expect(archived.archivedByDepartmentId).toBe(world.acme.id);
 
     // Globex was deleted first, but it is Globex that comes back first: react is used again, so it is active
     await adminCall('post', `/clients/${world.globex.id}/restore`).expect(200);
     const back = await db.tag.findUniqueOrThrow({ where: { id: react() } });
     expect(back.archivedAt).toBeNull();
-    expect(back.archivedByClientId).toBeNull();
+    expect(back.archivedByDepartmentId).toBeNull();
     // restoring the other one later changes nothing
     await adminCall('post', `/clients/${world.acme.id}/restore`).expect(200);
     expect((await db.tag.findUniqueOrThrow({ where: { id: react() } })).archivedAt).toBeNull();
@@ -716,7 +716,7 @@ describe('department technologies', () => {
   it('only technologies archived BY the deletion come back: a hand-archived one with the same timestamp does not', async () => {
     await adminCall('delete', `/clients/${world.acme.id}/technologies/${nodejs()}`).expect(204); // archived by hand
     const deletedAt = new Date();
-    await db.client.update({ where: { id: world.acme.id }, data: { deletedAt } });
+    await db.department.update({ where: { id: world.acme.id }, data: { deletedAt } });
     await db.tag.update({ where: { id: nodejs() }, data: { archivedAt: deletedAt } }); // same instant, on purpose
     await adminCall('post', `/clients/${world.acme.id}/restore`).expect(200);
     expect((await db.tag.findUniqueOrThrow({ where: { id: nodejs() } })).archivedAt).not.toBeNull();
@@ -753,7 +753,7 @@ describe('department technologies', () => {
     expect(global.status).toBe(201);
 
     // Globex later drops nothing, but Acme unlinks nodejs: its existing question can still be edited with it
-    await db.clientTag.deleteMany({ where: { clientId: world.acme.id, tagId: nodejs() } });
+    await db.departmentTag.deleteMany({ where: { departmentId: world.acme.id, tagId: nodejs() } });
     const edit = await call(
       world.users.authorAcme,
       'patch',

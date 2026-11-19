@@ -265,7 +265,7 @@ describe('resolveTagIds rules (with a stand-in database)', () => {
         findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
           tags.filter((t) => where.id.in.includes(t.id)),
       },
-      clientTag: {
+      departmentTag: {
         findMany: async ({ where }: { where: { tagId: { in: string[] } } }) =>
           linked.filter((id) => where.tagId.in.includes(id)).map((tagId) => ({ tagId })),
       },

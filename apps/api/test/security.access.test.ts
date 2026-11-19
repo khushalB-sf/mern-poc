@@ -268,7 +268,7 @@ describe('B4 mass assignment: unknown or privileged fields are rejected, not sil
         (await as(world.users.authorAcme, 'patch', `/api/questions/${q.id}`, patch)).status,
       ).toBe(400);
     }
-    expect((await db.question.findUniqueOrThrow({ where: { id: q.id } })).clientId).toBe(
+    expect((await db.question.findUniqueOrThrow({ where: { id: q.id } })).departmentId).toBe(
       world.acme.id,
     );
   });

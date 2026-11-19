@@ -121,7 +121,7 @@ Format: Decision · Problem · Reasoning · Alternatives · Trade-offs · Implem
 - **Review questions:** Show me the schema and the join. Why `EXISTS` and not `JOIN`+`GROUP BY HAVING`? (Joins multiply rows and need `DISTINCT`.)
 
 ### ADR-005 — Visibility enforced inside the query, one choke point
-- **Decision:** `question.repo.ts` exports the only functions that read `question`. Each takes `actor` as a required argument and embeds `q.client_id IS NULL OR EXISTS (SELECT 1 FROM client_grant WHERE user_id=$actor AND client_id=q.client_id)`. Invisible and nonexistent are both `null`/empty. Services map `null` → identical 404.
+- **Decision:** `question.repo.ts` exports the only functions that read `question`. Each takes `actor` as a required argument and embeds `q.department_id IS NULL OR EXISTS (SELECT 1 FROM department_grant WHERE user_id=$actor AND department_id=q.department_id)`. Invisible and nonexistent are both `null`/empty. Services map `null` → identical 404.
 - **Problem:** §3.4: no leak through search, filter, ID access, history, counts, duplicates.
 - **Reasoning:** One module means one place to review. Including visibility in the same statement as filter/search/pagination means counts, totals and ranking are computed only over visible rows.
 - **Alternatives:** (a) Fetch then filter in app: **rejected**, it is the failure the brief names. (b) Postgres RLS: **deferred**. It gives defence in depth, but with Prisma connection pooling it needs `SET LOCAL` inside every transaction, and the failure mode (silently empty results from a missing setting) is harder to debug in a 2-week solo POC. Recorded as a future hardening step. (c) Per-question `allowed_user_ids` array: stale on grant change.

@@ -12,23 +12,24 @@ const signedOut = {
   },
 };
 const TAB_LABELS = [
+  'Start here',
   'Feature by feature',
   'Learning path',
   'Roles',
   'Grants',
-  'Request flow',
   'The decision',
+  'Request flow',
+  'Sessions',
   'Request pipeline',
   'Each operation',
   'Database',
-  'Sessions',
   'Approach',
+  'Technical decisions',
   'Security',
-  'Engineering practices',
 ];
 
 describe('how it works page', () => {
-  it('is reachable from the header and opens on the feature walkthrough', async () => {
+  it('is reachable from the header and opens on the Start here tab, written for a newcomer', async () => {
     mockApi({ ...baseHandlers });
     renderApp('/');
     await userEvent.click(await screen.findByRole('link', { name: 'How it works' }));
@@ -36,10 +37,11 @@ describe('how it works page', () => {
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(TAB_LABELS);
-    expect(screen.getByRole('tab', { name: 'Feature by feature' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Start here' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
+    expect(screen.getByRole('list', { name: 'One request in six steps' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Roles' }));
     const roles = screen.getByRole('table', { name: 'What each role can do' });
@@ -81,17 +83,14 @@ describe('how it works page', () => {
     );
     screen.getByRole('tab', { name: 'The decision' }).focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(screen.getByRole('tab', { name: 'Request pipeline' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Request flow' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
     await userEvent.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: 'Engineering practices' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    expect(screen.getByRole('tab', { name: 'Security' })).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{ArrowRight}'); // wraps round to the first tab
-    expect(screen.getByRole('tab', { name: 'Feature by feature' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Start here' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -99,7 +98,7 @@ describe('how it works page', () => {
 
   it('walks each feature through the same five layers, ending at the database', async () => {
     mockApi({ ...baseHandlers });
-    renderApp('/how-it-works');
+    renderApp('/how-it-works#features');
     const features = await screen.findByRole('group', { name: 'Choose a feature' });
     const buttons = within(features).getAllByRole('button');
     expect(buttons.map((b) => b.textContent)).toEqual([
@@ -135,7 +134,7 @@ describe('how it works page', () => {
 
   it('presents one step at a time and moves between steps', async () => {
     mockApi({ ...baseHandlers });
-    renderApp('/how-it-works');
+    renderApp('/how-it-works#features');
     await userEvent.click(await screen.findByRole('button', { name: 'Present step by step' }));
     expect(screen.getByText('Step 1 of 5: On screen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Back/ })).toBeDisabled();
@@ -169,7 +168,7 @@ describe('how it works page', () => {
     for (const label of TAB_LABELS) {
       await userEvent.click(screen.getByRole('tab', { name: label }));
       const panel = screen.getByRole('tabpanel');
-      expect(within(panel).getByRole('list', { name: /: overview$/ })).toBeInTheDocument();
+      expect(within(panel).getAllByRole('list', { name: /: overview$/ }).length).toBeGreaterThan(0);
     }
   });
 
@@ -191,13 +190,13 @@ describe('how it works page', () => {
       within(statuses).getByRole('row', { name: /409.*DUPLICATE_SUSPECTED/ }),
     ).toBeInTheDocument();
     const traces = screen.getByRole('table', { name: /Example requests/ });
-    const carol = within(traces).getByRole('row', { name: /Carol/ });
-    expect(within(carol).getByText('404')).toBeInTheDocument();
+    const noGrants = within(traces).getByRole('row', { name: /no department grants/ });
+    expect(within(noGrants).getByText('404')).toBeInTheDocument();
   });
 
   it('is open to signed-out visitors, with a way back to sign in', async () => {
     mockApi({ ...signedOut });
-    const { router } = renderApp('/how-it-works');
+    const { router } = renderApp('/how-it-works#features');
     await screen.findByRole('heading', { level: 1, name: 'How it works' });
     expect(router.state.location.pathname).toBe('/how-it-works');
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
@@ -229,7 +228,7 @@ describe('how it works page', () => {
 
   it('has no accessibility violations on any tab', async () => {
     mockApi({ ...baseHandlers });
-    const { container } = renderApp('/how-it-works');
+    const { container } = renderApp('/how-it-works#features');
     await screen.findByRole('heading', { level: 1, name: 'How it works' });
     for (const label of TAB_LABELS) {
       await userEvent.click(screen.getByRole('tab', { name: label }));
@@ -242,7 +241,7 @@ describe('how it works page', () => {
       ).toEqual([]);
     }
     // One axe scan per tab is slow in jsdom, so this test gets more than the 5 s default.
-  }, 30_000);
+  }, 90_000);
 
   it('explains the implementation approach as problem, decision, why and cost', async () => {
     mockApi({ ...baseHandlers });
@@ -276,22 +275,6 @@ describe('how it works page', () => {
     }
   });
 
-  it('covers testing, TDD, quality, accessibility, documentation and delivery', async () => {
-    mockApi({ ...baseHandlers });
-    renderApp('/how-it-works#practices');
-    const panel = await screen.findByRole('tabpanel');
-    for (const name of [
-      'Testing',
-      'Test-driven development and the red team',
-      'Code quality',
-      'Accessibility',
-      'Decisions and documentation',
-      'Delivery and operations',
-    ]) {
-      expect(within(panel).getByRole('heading', { name })).toBeInTheDocument();
-    }
-  });
-
   it('states who may delete a question, and lists the notification and audit tables', async () => {
     mockApi({ ...baseHandlers });
     renderApp('/how-it-works#roles');
@@ -305,6 +288,70 @@ describe('how it works page', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Database' }));
     expect(screen.getAllByText('notification').length).toBeGreaterThan(0);
     expect(screen.getByText(/database trigger refuses UPDATE and DELETE/)).toBeInTheDocument();
+  });
+
+  it('draws a browser, API and database picture for every feature, and lights the box being presented', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#features');
+    const picker = await screen.findByRole('group', { name: 'Choose a feature' });
+    for (const button of within(picker).getAllByRole('button')) {
+      await userEvent.click(button);
+      const picture = screen.getByRole('list', { name: `${button.textContent}: overview` });
+      for (const word of ['Your browser', 'The API (server)', 'The database']) {
+        expect(within(picture).getByText(word)).toBeInTheDocument();
+      }
+      // every step number appears exactly once, so the picture and the steps below tell one story
+      for (const n of ['1', '2', '3', '4', '5', '6', '7']) {
+        expect(within(picture).getAllByText(n)).toHaveLength(1);
+      }
+    }
+    await userEvent.click(within(picker).getByRole('button', { name: 'Sign in' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Present step by step' }));
+    const picture = screen.getByRole('list', { name: 'Sign in: overview' });
+    const box = (title: string) => within(picture).getByText(title).closest('li')!;
+    expect(box('Your browser')).toHaveClass('ring-2');
+    await userEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Next/ }));
+    expect(box('The API (server)')).toHaveClass('ring-2');
+    expect(box('Your browser')).not.toHaveClass('ring-2');
+  });
+
+  it('explains the words and the six steps of one request for a newcomer', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#start');
+    const panel = await screen.findByRole('tabpanel');
+    const steps = within(panel).getByRole('list', { name: 'One request in six steps' });
+    expect(within(steps).getAllByRole('listitem')).toHaveLength(6);
+    // the picture shows the same journey: browser, API, database, with all six step numbers on it
+    const picture = within(panel).getByRole('list', { name: 'Start here: overview' });
+    for (const word of ['Your browser', 'The API (server)', 'The database', 'Request', 'Reply']) {
+      expect(within(picture).getByText(word)).toBeInTheDocument();
+    }
+    for (const n of ['1', '2', '3', '4', '5', '6']) {
+      expect(within(picture).getByText(n)).toBeInTheDocument();
+    }
+    for (const group of [
+      'How the web talks',
+      'How the code is organised',
+      'The database',
+      'Keeping it safe',
+      'Testing and running it',
+    ]) {
+      expect(within(panel).getByRole('heading', { name: group })).toBeInTheDocument();
+    }
+    // the words the other tabs lean on are each explained
+    for (const term of [
+      'Middleware',
+      'Transaction',
+      'Foreign key and relationship',
+      'ORM (Prisma)',
+      'Migration',
+      'CSRF',
+      'httpOnly cookie',
+      'Status code',
+    ]) {
+      expect(within(panel).getByText(term)).toBeInTheDocument();
+    }
   });
 
   it('maps the Full Stack 101 path to the code, every feature, and the questions to answer', async () => {
@@ -336,9 +383,49 @@ describe('how it works page', () => {
     expect(within(list).getByText(/would confirm the question exists/)).toBeVisible();
   });
 
+  it('records every technical decision by area, with why, the rejected alternative and the cost', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#decisions');
+    const panel = await screen.findByRole('tabpanel');
+    for (const area of [
+      'Repository and tooling',
+      'Folder structure',
+      'Backend',
+      'Database',
+      'Frontend',
+      'Delivery, testing and operations',
+    ]) {
+      expect(within(panel).getByRole('heading', { name: area })).toBeInTheDocument();
+      expect(within(panel).getByRole('list', { name: `${area} decisions` })).toBeInTheDocument();
+    }
+    // Every decision names what was chosen, why, what it was chosen over, and the cost.
+    const cards = within(panel).getAllByRole('heading', { level: 4 });
+    expect(cards.length).toBeGreaterThanOrEqual(50);
+    for (const card of cards) {
+      const item = card.closest('li')!;
+      for (const label of ['Why', 'Instead of', 'The cost']) {
+        expect(within(item).getByText(label)).toBeInTheDocument();
+      }
+      expect(item).toHaveTextContent('Chosen:');
+    }
+    // the folder-structure and database-design decisions the page was asked to explain
+    expect(
+      within(panel).getByRole('heading', { name: 'API: by feature, with layers inside' }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('heading', { name: 'Web: app, features, shared' }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('heading', { name: 'Composite keys on link tables' }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('heading', { name: 'UUID keys, timestamptz times' }),
+    ).toBeInTheDocument();
+  });
+
   it('describes the review and department-technology features end to end', async () => {
     mockApi({ ...baseHandlers });
-    renderApp('/how-it-works');
+    renderApp('/how-it-works#features');
     await userEvent.click(await screen.findByRole('button', { name: 'Review a question' }));
     let tables = screen.getByRole('list', { name: 'Tables touched' });
     expect(within(tables).getByText(/QUESTION_APPROVED or QUESTION_REJECTED/)).toBeInTheDocument();
@@ -347,7 +434,7 @@ describe('how it works page', () => {
       screen.getByRole('button', { name: 'Manage a department’s technologies' }),
     );
     tables = screen.getByRole('list', { name: 'Tables touched' });
-    expect(within(tables).getByText('client_tag')).toBeInTheDocument();
+    expect(within(tables).getByText('department_tag')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete and restore a department' }));
     tables = screen.getByRole('list', { name: 'Tables touched' });
     expect(within(tables).getByText(/deleted_at = now/)).toBeInTheDocument();

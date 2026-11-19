@@ -48,17 +48,17 @@ enum AuditType {
 }
 
 model AppUser {
-  id            String         @id @default(uuid()) @db.Uuid
-  email         String         @unique
+  id            String            @id @default(uuid()) @db.Uuid
+  email         String            @unique
   name          String
-  passwordHash  String         @map("password_hash")
-  role          Role           @default(USER)
-  active        Boolean        @default(true)
+  passwordHash  String            @map("password_hash")
+  role          Role              @default(USER)
+  active        Boolean           @default(true)
   // Soft delete: the row stays so authored questions and the audit trail keep their author.
-  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz()
-  grants        ClientGrant[]
-  questions     Question[]     @relation("QuestionAuthor")
-  reviewed      Question[]     @relation("QuestionReviewer")
+  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz()
+  grants        DepartmentGrant[]
+  questions     Question[]        @relation("QuestionAuthor")
+  reviewed      Question[]        @relation("QuestionReviewer")
   auditEvents   AuditEvent[]
   refreshTokens RefreshToken[]
   notifications Notification[]
@@ -66,29 +66,29 @@ model AppUser {
   @@map("app_user")
 }
 
-model Client {
-  id           String        @id @default(uuid()) @db.Uuid
-  name         String        @unique
+model Department {
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String            @unique
   description  String?
   // Soft delete: hides the department and its questions; history and grants stay.
-  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz()
-  grants       ClientGrant[]
+  deletedAt    DateTime?         @map("deleted_at") @db.Timestamptz()
+  grants       DepartmentGrant[]
   questions    Question[]
-  technologies ClientTag[]
-  archivedTags Tag[]         @relation("ArchivedByDeletion")
+  technologies DepartmentTag[]
+  archivedTags Tag[]             @relation("ArchivedByDeletion")
 
-  @@map("client")
+  @@map("department")
 }
 
-// Presence of a row = the user may see that client's questions. PK makes the visibility EXISTS a PK lookup.
-model ClientGrant {
-  userId   String  @map("user_id") @db.Uuid
-  clientId String  @map("client_id") @db.Uuid
-  user     AppUser @relation(fields: [userId], references: [id], onDelete: Restrict)
-  client   Client  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+// Presence of a row = the user may see that department's questions. PK makes the visibility EXISTS a PK lookup.
+model DepartmentGrant {
+  userId       String     @map("user_id") @db.Uuid
+  departmentId String     @map("department_id") @db.Uuid
+  user         AppUser    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
 
-  @@id([userId, clientId])
-  @@map("client_grant")
+  @@id([userId, departmentId])
+  @@map("department_grant")
 }
 
 model TagCategory {
@@ -101,33 +101,33 @@ model TagCategory {
 }
 
 model Tag {
-  id                 String        @id @default(uuid()) @db.Uuid
-  categoryId         String        @map("category_id") @db.Uuid
-  value              String
-  label              String
+  id                     String          @id @default(uuid()) @db.Uuid
+  categoryId             String          @map("category_id") @db.Uuid
+  value                  String
+  label                  String
   // Archived: hidden from pickers and filters and not attachable to new questions, but kept on existing ones.
-  archivedAt         DateTime?     @map("archived_at") @db.Timestamptz()
+  archivedAt             DateTime?       @map("archived_at") @db.Timestamptz()
   // Set when a department\'s deletion archived this technology (nobody else used it); null for a hand-archive.
-  archivedByClientId String?       @map("archived_by_client_id") @db.Uuid
-  archivedByClient   Client?       @relation("ArchivedByDeletion", fields: [archivedByClientId], references: [id], onDelete: Restrict)
-  category           TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  questions          QuestionTag[]
-  clients            ClientTag[]
+  archivedByDepartmentId String?         @map("archived_by_department_id") @db.Uuid
+  archivedByDepartment   Department?     @relation("ArchivedByDeletion", fields: [archivedByDepartmentId], references: [id], onDelete: Restrict)
+  category               TagCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  questions              QuestionTag[]
+  departments            DepartmentTag[]
 
   @@unique([categoryId, value])
   @@map("tag")
 }
 
 // A technology offered to a department's questions. Many-to-many: Node.js can sit under MERN and MEAN.
-model ClientTag {
-  clientId String @map("client_id") @db.Uuid
-  tagId    String @map("tag_id") @db.Uuid
-  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Restrict)
+model DepartmentTag {
+  departmentId String     @map("department_id") @db.Uuid
+  tagId        String     @map("tag_id") @db.Uuid
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  tag          Tag        @relation(fields: [tagId], references: [id], onDelete: Restrict)
 
-  @@id([clientId, tagId])
+  @@id([departmentId, tagId])
   @@index([tagId])
-  @@map("client_tag")
+  @@map("department_tag")
 }
 
 model Question {
@@ -136,7 +136,7 @@ model Question {
   answerNotes  String         @default("") @map("answer_notes")
   authorId     String         @map("author_id") @db.Uuid
   // Set at creation only; immutable afterwards (IMP-05).
-  clientId     String?        @map("client_id") @db.Uuid
+  departmentId String?        @map("department_id") @db.Uuid
   // New and edited questions start PENDING; only a reviewer moves them to APPROVED or REJECTED.
   status       QuestionStatus @default(PENDING)
   reviewNote   String?        @map("review_note")
@@ -148,14 +148,14 @@ model Question {
   updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
   author       AppUser        @relation("QuestionAuthor", fields: [authorId], references: [id], onDelete: Restrict)
   reviewedBy   AppUser?       @relation("QuestionReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
-  client       Client?        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: Restrict)
   tags         QuestionTag[]
   auditEvents  AuditEvent[]
 
   // No unique on text: a UNIQUE violation would leak restricted questions (IMP-04).
   // GIN expression indexes (full-text, trigram) and the non-blank CHECK are in the migration SQL.
   @@index([createdAt(sort: Desc), id(sort: Desc)])
-  @@index([clientId])
+  @@index([departmentId])
   @@index([status])
   @@map("question")
 }

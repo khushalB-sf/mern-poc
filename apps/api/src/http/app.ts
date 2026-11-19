@@ -8,7 +8,7 @@ import type { Config } from '../config/env.js';
 import type { Db } from '../db/prisma.js';
 import { adminRoutes } from '../modules/admin/routes.js';
 import { authRoutes } from '../modules/auth/routes.js';
-import { clientRoutes } from '../modules/clients/routes.js';
+import { departmentRoutes } from '../modules/departments/routes.js';
 import { notificationRoutes } from '../modules/notifications/routes.js';
 import { questionRoutes } from '../modules/questions/routes.js';
 import { tagRoutes } from '../modules/tags/routes.js';
@@ -89,7 +89,7 @@ export function createApp({ config, logger, db }: AppDeps): Express {
   // One allowance per signed-in user for everything that is not the questions API (which has its own).
   const otherLimit = perUserLimit(config.RATE_LIMIT_OTHER_PER_MIN);
   api.use('/tags', recordBase, tagRoutes(db, config, otherLimit));
-  api.use('/clients', recordBase, clientRoutes(db, config, otherLimit));
+  api.use('/clients', recordBase, departmentRoutes(db, config, otherLimit));
   api.use('/notifications', recordBase, notificationRoutes(db, config, otherLimit));
   api.use('/admin', recordBase, adminRoutes(db, config, otherLimit));
   app.use('/api', api);

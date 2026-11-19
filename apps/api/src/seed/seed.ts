@@ -47,7 +47,7 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
   const passwordHash = await hashPassword(password);
 
   const clients = await Promise.all(
-    DEPARTMENTS.map((d) => db.client.create({ data: { name: d.name } })),
+    DEPARTMENTS.map((d) => db.department.create({ data: { name: d.name } })),
   );
   const users = await Promise.all(
     USERS.map((u) =>
@@ -57,7 +57,7 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
           name: u.name,
           role: u.role,
           passwordHash,
-          grants: { create: u.grants.map((i) => ({ clientId: clients[i]!.id })) },
+          grants: { create: u.grants.map((i) => ({ departmentId: clients[i]!.id })) },
         },
       }),
     ),
@@ -74,9 +74,9 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
   }
 
   // Each department's technologies (shared ones like Node.js sit under several departments).
-  await db.clientTag.createMany({
+  await db.departmentTag.createMany({
     data: DEPARTMENTS.flatMap((d, i) =>
-      d.techs.map((t) => ({ clientId: clients[i]!.id, tagId: tagId.get(`technology:${t}`)! })),
+      d.techs.map((t) => ({ departmentId: clients[i]!.id, tagId: tagId.get(`technology:${t}`)! })),
     ),
   });
 
@@ -233,7 +233,7 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
           text: r.text,
           answerNotes: r.notes,
           authorId: r.authorId,
-          clientId: r.clientId,
+          departmentId: r.clientId,
           createdAt: r.at,
           updatedAt: r.at,
           status: r.status,

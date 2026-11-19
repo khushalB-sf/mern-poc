@@ -184,7 +184,7 @@ scripts/        backup.sh and restore.sh (database dumps)
 compose.yaml    db + migrate job + api + web (+ caddy with --profile tls)
 ```
 
-Glossary: the product says **department**; the data model, paths and fields still say `client` (`/clients`, `clientId`). See the glossary in [docs/03-architecture.md](docs/03-architecture.md).
+Glossary: the product says **department**; the database tables and server code say `department`, while the public API paths and fields still say `client` (`/clients`, `clientId`). See the glossary in [docs/03-architecture.md](docs/03-architecture.md).
 
 Key design rule: `apps/api/src/modules/questions/question.repo.ts` is the **only** file that reads the question tables, and every function in it takes the acting user and applies the client-visibility rule inside the SQL. A test fails if any other file touches them.
 

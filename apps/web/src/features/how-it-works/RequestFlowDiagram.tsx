@@ -4,17 +4,17 @@
 const BOXES = [
   { x: 10, w: 110, title: 'Browser', sub: 'sends the cookie' },
   { x: 165, w: 140, title: 'requireAuth', sub: 'valid session?' },
-  { x: 350, w: 140, title: 'requireRole', sub: 'create and admin' },
+  { x: 350, w: 140, title: 'requireRole', sub: 'create and admin only' },
   { x: 535, w: 140, title: 'Zod validation', sub: 'right shape?' },
   { x: 720, w: 170, title: 'Handler → Service', sub: 'visible? allowed?', accent: true },
   { x: 935, w: 115, title: 'Postgres', sub: 'SQL + Prisma' },
 ] as const;
 
 const REFUSALS = [
-  { at: 1, x: 165, w: 140, lines: ['401 Unauthenticated'] },
-  { at: 2, x: 350, w: 140, lines: ['403 Forbidden'] },
-  { at: 3, x: 535, w: 140, lines: ['400 Validation'] },
-  { at: 4, x: 705, w: 200, lines: ['404 Not found', '403 Forbidden · 409 Duplicate'] },
+  { at: 1, x: 165, w: 140, lines: ['401 Not signed in'] },
+  { at: 2, x: 350, w: 140, lines: ['403 Not allowed'] },
+  { at: 3, x: 535, w: 140, lines: ['400 Bad input'] },
+  { at: 4, x: 705, w: 200, lines: ['404 Hidden or missing', '403 Not allowed · 409 Duplicate'] },
 ] as const;
 
 const Y = 100;
@@ -22,10 +22,10 @@ const H = 64;
 
 export const GATES = [
   'The browser sends the session cookie with the request.',
-  'requireAuth checks the session. If it is not valid, the request ends with 401.',
-  'requireRole checks the role. It runs on create and on /admin only. If it is not allowed, 403.',
-  'Zod validation checks the shape of the input. If it is wrong, 400.',
-  'The handler calls the service, which checks visibility (404), then role and ownership (403), then state for a review (409) or the duplicate check for a create (409).',
+  'requireAuth checks the session (are you signed in?). If it is not valid, the request ends with 401.',
+  'requireRole checks your role. It runs on create and on /admin only. If your role is not allowed, the request ends with 403.',
+  'Zod validation checks that the input has the right shape. If it is wrong, 400.',
+  'The handler calls the service, which checks visibility first (404 if hidden), then role and ownership (403), then the state of a review (409) or the duplicate check for a create (409).',
   'Postgres runs the query. Reads carry the visibility rule in the SQL.',
   'The answer travels back as JSON: the data, or an error body.',
 ];

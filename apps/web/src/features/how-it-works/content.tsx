@@ -32,7 +32,7 @@ export const ROLE_ROWS: { action: string; cells: RoleCells }[] = [
   { action: 'Create a global question', cells: ['no', 'yes', 'no', 'Live at once'] },
   {
     action: 'Create a question for a department',
-    cells: ['no', 'Needs that grant', 'no', 'Any department'],
+    cells: ['no', 'Needs access to that department', 'no', 'Any department'],
   },
   {
     action: 'Edit a question you wrote (an Author’s edit goes back for review)',
@@ -78,22 +78,24 @@ export const DECISION_STEPS: FlowStep[] = [
     title: 'Who are you?',
     detail: (
       <>
-        A valid signed-in session, and the account must be active. Your role is read from the
-        database on every request, so a role change takes effect immediately.
+        The server first checks that you have a valid signed-in session and an active account. It
+        reads your role from the database on every request, so a role change takes effect at once.
       </>
     ),
-    fail: '401 UNAUTHENTICATED',
+    fail: '401 UNAUTHENTICATED (not signed in)',
   },
   {
     title: 'Can you see this question?',
     detail: (
       <>
-        Yes if its status lets your role read it (read-only: approved only, Authors: approved plus
-        their own, Reviewers: any) and it is global or you hold a grant for its department. Admins
-        see everything. This is checked first, so it comes before the role check.
+        You can see it if its status lets your role read it, and it is either global or you hold a
+        grant for its department. (A grant is a permission that lets one user see one department.)
+        Read-only accounts see approved questions only. Authors see approved ones plus their own.
+        Reviewers see any status. Admins see everything. This check runs first, before the role
+        check.
       </>
     ),
-    fail: '404 NOT_FOUND (same as an ID that does not exist)',
+    fail: '404 NOT_FOUND (the same answer as for an ID that does not exist)',
   },
   {
     title: 'Does your role allow the action?',
@@ -104,7 +106,7 @@ export const DECISION_STEPS: FlowStep[] = [
         that is not yours, or Admin. Deleting a question needs Admin.
       </>
     ),
-    fail: '403 FORBIDDEN',
+    fail: '403 FORBIDDEN (the server knows you, but your role is not allowed)',
   },
 ];
 
@@ -113,8 +115,9 @@ export const PIPELINE: FlowStep[] = [
     title: 'nginx forwards /api to the API container',
     detail: (
       <>
-        The browser only talks to one origin, so the cookies are first-party and no CORS setup is
-        needed.
+        nginx is the web server in front of the app. The browser talks to only one origin (one web
+        address), so the cookies are first-party and no CORS setup is needed. CORS is the browser
+        rule for calls between different sites.
       </>
     ),
   },
@@ -122,9 +125,10 @@ export const PIPELINE: FlowStep[] = [
     title: 'Request ID and logging',
     detail: (
       <>
-        <Code>pino-http</Code> makes its own request ID (returned as <Code>X-Request-Id</Code>) and
-        redacts cookies and auth headers from the logs. The client address comes from{' '}
-        <Code>X-Forwarded-For</Code> only for the proxy hops named in <Code>TRUST_PROXY</Code>.
+        Every request gets an ID, so you can find it in the logs. <Code>pino-http</Code> makes the
+        ID (returned as <Code>X-Request-Id</Code>) and hides cookies and auth headers in the logs.
+        The client address comes from <Code>X-Forwarded-For</Code>, a header a proxy adds. It is
+        trusted only for the proxy hops named in <Code>TRUST_PROXY</Code>.
       </>
     ),
   },
@@ -132,22 +136,29 @@ export const PIPELINE: FlowStep[] = [
     title: 'Security headers and no caching',
     detail: (
       <>
-        <Code>helmet</Code> sets the standard hardening headers, and every <Code>/api</Code>{' '}
-        response carries <Code>Cache-Control: no-store</Code>, so per-user data is never kept by a
-        browser or a shared cache.
+        <Code>helmet</Code> adds the standard security headers to every response. Every{' '}
+        <Code>/api</Code> response also carries <Code>Cache-Control: no-store</Code>. That tells
+        browsers and shared caches not to keep per-user data.
       </>
     ),
   },
   {
     title: 'JSON body, capped at 100 kb',
-    detail: <>Malformed JSON and oversized bodies are turned away before any route runs.</>,
-    fail: '400 INVALID_JSON · 413 PAYLOAD_TOO_LARGE',
+    detail: (
+      <>
+        The server reads the JSON body, up to 100 kb. Broken JSON and oversized bodies are turned
+        away before any route runs.
+      </>
+    ),
+    fail: '400 INVALID_JSON (broken JSON) · 413 PAYLOAD_TOO_LARGE (body too big)',
   },
   {
     title: 'Cookies parsed',
     detail: (
       <>
-        <Code>cookie-parser</Code> exposes the httpOnly <Code>access_token</Code> cookie.
+        <Code>cookie-parser</Code> reads the cookies on the request. The <Code>access_token</Code>{' '}
+        cookie is httpOnly: scripts on the page cannot read it, but the browser still sends it with
+        each request.
       </>
     ),
   },
@@ -155,8 +166,9 @@ export const PIPELINE: FlowStep[] = [
     title: 'NUL-byte gate',
     detail: (
       <>
-        Postgres cannot store a NUL character, so any string in the body or query that contains one
-        is refused here instead of becoming a database error.
+        A NUL character is an invisible character with code 0. Postgres cannot store it. So any
+        string in the body or query that contains one is refused here, instead of becoming a
+        database error later.
       </>
     ),
     fail: '400 VALIDATION_ERROR',
@@ -165,8 +177,11 @@ export const PIPELINE: FlowStep[] = [
     title: 'Origin check (second CSRF layer)',
     detail: (
       <>
-        Unsafe methods (POST, PATCH) carrying a foreign <Code>Origin</Code> are refused. The cookies
-        are also <Code>SameSite=Strict</Code>.
+        CSRF is when another website tricks your browser into sending a request. This is the second
+        defence against it. Requests that change data (POST, PATCH) are refused if their{' '}
+        <Code>Origin</Code> header names a foreign site. The cookies are also{' '}
+        <Code>SameSite=Strict</Code>, so the browser does not send them on requests started from
+        other sites.
       </>
     ),
     fail: '403 BAD_ORIGIN',
@@ -175,41 +190,45 @@ export const PIPELINE: FlowStep[] = [
     title: 'requireAuth',
     detail: (
       <>
-        Verifies the JWT (HS256, issuer pinned), then loads the user by primary key. Role and{' '}
+        This code runs before the route and checks who you are. It verifies the JWT (a signed token;
+        HS256 is the signing method, and the issuer is pinned, so the token must name this app as
+        its issuer). Then it loads the user by primary key (the unique ID column). Role and{' '}
         <Code>active</Code> come from the database, not from the token.
       </>
     ),
-    fail: '401 UNAUTHENTICATED',
+    fail: '401 UNAUTHENTICATED (not signed in)',
   },
   {
     title: 'Rate limits',
     detail: (
       <>
-        120 requests a minute by default for the questions API, and a separate 120 a minute shared
-        by tags, departments and the admin pages. Refreshing or ending a session is limited per
-        address. Rate-limit headers are switched off on purpose, so a hidden search result cannot be
-        told apart from a genuinely empty one.
+        A rate limit is a cap on requests per minute. The questions API allows 120 a minute by
+        default. Tags, departments and the admin pages share a separate 120 a minute. Refreshing or
+        ending a session is limited per address. Rate-limit headers are switched off on purpose, so
+        a hidden search result cannot be told apart from a genuinely empty one.
       </>
     ),
-    fail: '429 RATE_LIMITED',
+    fail: '429 RATE_LIMITED (too many requests)',
   },
   {
     title: 'requireRole (create only)',
     detail: (
       <>
-        <Code>POST /questions</Code> allows Author and Admin and runs before validation. Edits and
-        reviews have no role middleware: their role check sits inside the service, after the
-        visibility lookup. <Code>/admin/*</Code> is gated to Admin for the whole router.
+        This is a role gate: it lets only certain roles through. <Code>POST /questions</Code> allows
+        Author and Admin, and runs before validation. Edits and reviews have no role gate here.
+        Their role check sits inside the service, after the check that you can see the question. The
+        whole <Code>/admin/*</Code> router is for Admin only.
       </>
     ),
-    fail: '403 FORBIDDEN',
+    fail: '403 FORBIDDEN (your role is not allowed)',
   },
   {
     title: 'Validation with Zod',
     detail: (
       <>
-        Params, query and body are parsed by strict schemas, so unknown fields are rejected, not
-        ignored. Nothing below this step runs on bad input.
+        Zod checks that the input has the right shape. Params (parts of the URL), query (the part
+        after the <Code>?</Code>) and body are all checked. The schemas are strict, so unknown
+        fields are rejected, not ignored. Nothing below this step runs on bad input.
       </>
     ),
     fail: '400 VALIDATION_ERROR with the field issues',
@@ -218,8 +237,9 @@ export const PIPELINE: FlowStep[] = [
     title: 'Route handler, then service, then repository',
     detail: (
       <>
-        The handler stays thin. The service holds the rules (visibility, role, duplicates, audit).
-        The repository holds the SQL.
+        Three layers share the work. The handler stays thin: it reads the request and sends the
+        reply. The service holds the rules (visibility, role, duplicates, and the audit record of
+        who did what). The repository holds the SQL.
       </>
     ),
   },
@@ -227,11 +247,11 @@ export const PIPELINE: FlowStep[] = [
     title: 'One error handler',
     detail: (
       <>
-        Known errors become a JSON <Code>{'{ error: { code, message } }'}</Code> body. Anything
-        unexpected is logged in full on the server and shown to the caller as a bare 500.
+        Known errors become a JSON body shaped like <Code>{'{ error: { code, message } }'}</Code>.
+        Anything unexpected is logged in full on the server. The caller only sees a bare 500.
       </>
     ),
-    fail: '500 INTERNAL',
+    fail: '500 INTERNAL (unexpected server error)',
   },
 ];
 
@@ -249,14 +269,15 @@ export const OPERATIONS: OperationFlow[] = [
     title: 'List and search',
     route: 'GET /api/questions',
     intro:
-      'Visibility is part of the same SQL WHERE as the filters, so hidden rows are never fetched, counted or ranked.',
+      'Visibility is part of the same SQL WHERE (the part of a query that picks rows) as the filters. So hidden rows are never fetched, counted or ranked.',
     steps: [
       {
         title: 'Validate the query',
         detail: (
           <>
-            Strict schema: <Code>q</Code> up to 200 characters, <Code>tags</Code>,{' '}
-            <Code>clientId</Code>, <Code>limit</Code> 1 to 50, <Code>offset</Code>.
+            A strict schema checks the query string: <Code>q</Code> (the search text) up to 200
+            characters, <Code>tags</Code>, <Code>clientId</Code>, <Code>limit</Code> 1 to 50, and{' '}
+            <Code>offset</Code> (how many rows to skip).
           </>
         ),
         fail: '400 VALIDATION_ERROR',
@@ -265,8 +286,8 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Resolve the tag filters',
         detail: (
           <>
-            Tag values are looked up as ids. Different categories are AND-ed, values inside one
-            category are OR-ed.
+            Tag values are looked up and turned into ids. Different categories are AND-ed: all must
+            match. Values inside one category are OR-ed: any may match.
           </>
         ),
         fail: '400 UNKNOWN_TAG · UNKNOWN_TAG_CATEGORY',
@@ -275,8 +296,10 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Build one WHERE clause',
         detail: (
           <>
-            <Code>visible(actor)</Code> AND the optional client filter AND full-text match AND the
-            tag groups. A <Code>clientId</Code> you hold no grant for just returns nothing.
+            <Code>visible(actor)</Code> (the rule that decides which rows you may see) AND the
+            optional client filter AND the full-text match AND the tag groups. Full-text search uses
+            a lookup structure that makes text search fast. A <Code>clientId</Code> you hold no
+            grant for just returns nothing.
           </>
         ),
       },
@@ -284,8 +307,8 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Run two statements that share the clause',
         detail: (
           <>
-            One fetches the page, ordered by relevance when searching and newest first otherwise.
-            The other counts the total.
+            One statement fetches the page, ordered by relevance when searching and newest first
+            otherwise. The other counts the total. Both use the same WHERE clause.
           </>
         ),
       },
@@ -304,14 +327,19 @@ export const OPERATIONS: OperationFlow[] = [
     id: 'op-open',
     title: 'Open one question and its history',
     route: 'GET /api/questions/:id  ·  GET /api/questions/:id/history',
-    intro: 'A hidden question and a missing one are indistinguishable.',
+    intro: 'A question hidden from you looks exactly like one that does not exist.',
     steps: [
-      { title: 'Validate the id', detail: <>Must be a UUID.</>, fail: '400 VALIDATION_ERROR' },
       {
-        title: 'Select with the visibility predicate',
+        title: 'Validate the id',
+        detail: <>The id must be a UUID (a long, random, unique ID).</>,
+        fail: '400 VALIDATION_ERROR',
+      },
+      {
+        title: 'Select with the visibility rule',
         detail: (
           <>
-            <Code>WHERE id = $1 AND visible(actor)</Code>. No row means not found.
+            The query is <Code>WHERE id = $1 AND visible(actor)</Code>. If no row comes back, the
+            answer is “not found”.
           </>
         ),
         fail: '404 NOT_FOUND',
@@ -320,8 +348,8 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'History: only after the question is confirmed visible',
         detail: (
           <>
-            Only the edit diffs of this question are returned, never the raw audit payloads, which
-            can name other questions.
+            Only the edit diffs of this question are returned: the before and after of each change.
+            Raw audit payloads are never returned, because they can name other questions.
           </>
         ),
       },
@@ -332,14 +360,15 @@ export const OPERATIONS: OperationFlow[] = [
     title: 'Create',
     route: 'POST /api/questions',
     intro:
-      'The checks run cheapest and safest first. The insert and its audit row commit together.',
+      'The checks run cheapest and safest first. The insert and its audit row commit together: both are saved, or neither is.',
     steps: [
       {
         title: 'Role gate, then validation',
         detail: (
           <>
-            Author or Admin. Body: text 1 to 1000 characters, notes up to 10,000, at most 30 tags,
-            optional <Code>clientId</Code>, optional <Code>confirmNotDuplicate</Code>.
+            Only Author or Admin may create. Then the body is checked: text 1 to 1000 characters,
+            notes up to 10,000, at most 30 tags, optional <Code>clientId</Code>, optional{' '}
+            <Code>confirmNotDuplicate</Code>.
           </>
         ),
         fail: '403 FORBIDDEN · 400 VALIDATION_ERROR',
@@ -348,24 +377,30 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Grant check for the chosen client',
         detail: (
           <>
-            Looks up <Code>client_grant</Code> for you and that client. A client you are not granted
-            looks exactly like one that does not exist.
+            Looks up <Code>department_grant</Code> for you and that client (a client is a
+            department). A client you are not granted looks exactly like one that does not exist.
           </>
         ),
         fail: '404 NOT_FOUND',
       },
       {
         title: 'Resolve the tags',
-        detail: <>Tag values must exist in the fixed taxonomy. Callers cannot invent categories.</>,
+        detail: (
+          <>
+            Tag values must already exist in the fixed list of tags. Callers cannot invent
+            categories.
+          </>
+        ),
         fail: '400 UNKNOWN_TAG · UNKNOWN_TAG_CATEGORY',
       },
       {
         title: 'Duplicate check, on questions you can see only',
         detail: (
           <>
-            Trigram similarity at 0.6 or above. If there is a match and you did not confirm, the
-            attempt is audited as <Code>DUPLICATE_REJECTED</Code> in its own commit and the matches
-            come back. Hidden questions are never compared.
+            Trigram similarity (a score for how alike two texts are) at 0.6 or above. If there is a
+            match and you did not confirm, the attempt is recorded as{' '}
+            <Code>DUPLICATE_REJECTED</Code> and saved on its own, and the matches come back. Hidden
+            questions are never compared.
           </>
         ),
         fail: '409 DUPLICATE_SUSPECTED',
@@ -374,15 +409,21 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'One transaction: insert and audit',
         detail: (
           <>
-            Inserts the question and its tag links through Prisma, writes{' '}
-            <Code>DUPLICATE_OVERRIDDEN</Code> when you confirmed past a match, and writes{' '}
+            A transaction groups database writes so that all succeed or none do. Here it inserts the
+            question and its tag links through Prisma (the library that talks to the database). It
+            writes <Code>DUPLICATE_OVERRIDDEN</Code> when you confirmed past a match, and writes{' '}
             <Code>QUESTION_CREATED</Code>. All or nothing.
           </>
         ),
       },
       {
         title: 'Read it back and respond',
-        detail: <>Re-reads through the visibility predicate and returns 201 with the question.</>,
+        detail: (
+          <>
+            Reads the row again through the visibility rule and returns 201 (Created) with the
+            question.
+          </>
+        ),
       },
     ],
   },
@@ -390,7 +431,7 @@ export const OPERATIONS: OperationFlow[] = [
     id: 'op-edit',
     title: 'Edit',
     route: 'PATCH /api/questions/:id',
-    intro: 'Visibility first, then role, inside one transaction.',
+    intro: 'Visibility first, then role, all inside one transaction (all or nothing).',
     steps: [
       {
         title: 'Validate the id and the body',
@@ -404,7 +445,7 @@ export const OPERATIONS: OperationFlow[] = [
         fail: '400 VALIDATION_ERROR',
       },
       {
-        title: 'Load the question through the visibility predicate',
+        title: 'Load the question through the visibility rule',
         detail: <>You cannot edit what you cannot see.</>,
         fail: '404 NOT_FOUND',
       },
@@ -412,9 +453,9 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Check the role',
         detail: (
           <>
-            Allowed if you are an Author and the author of this question, or an Admin. Everyone
-            else, Reviewers included, stops here. An Author’s edit sends the question back to
-            review; an Admin’s does not.
+            You may edit if you are an Author and wrote this question, or if you are an Admin.
+            Everyone else, Reviewers included, stops here. An Author’s edit sends the question back
+            to review. An Admin’s edit does not.
           </>
         ),
         fail: '403 FORBIDDEN',
@@ -432,9 +473,9 @@ export const OPERATIONS: OperationFlow[] = [
         title: 'Update and audit, then commit',
         detail: (
           <>
-            Updates the row and replaces the tag set if it changed, then writes{' '}
+            Updates the row, and replaces the tag set if it changed. Then writes{' '}
             <Code>QUESTION_UPDATED</Code> with each field’s before and after. The history page is
-            built from these rows.
+            built from these rows. Committing saves it all together.
           </>
         ),
       },
@@ -449,69 +490,71 @@ export const OPERATIONS: OperationFlow[] = [
 export const TABLES: { name: string; purpose: string; keys: string }[] = [
   {
     name: 'app_user',
-    purpose: 'Accounts. One global role: USER, AUTHOR, REVIEWER or ADMIN.',
-    keys: 'email unique · active flag · deleted_at',
+    purpose: 'Accounts. Each has one global role: USER, AUTHOR, REVIEWER or ADMIN.',
+    keys: 'email must be unique · active flag · deleted_at (set when the account is soft-deleted: marked as deleted, not removed)',
   },
   {
-    name: 'client',
+    name: 'department',
     purpose:
       'The departments that can own restricted questions (MERN, MEAN, Python, AI-ML, Data Engineering, DevOps).',
-    keys: 'name unique · deleted_at (soft delete, an admin can restore)',
+    keys: 'name must be unique · deleted_at (soft delete: marked as deleted, and an admin can restore it)',
   },
   {
-    name: 'client_grant',
+    name: 'department_grant',
     purpose: 'A row means this user may see that department’s questions.',
-    keys: 'PK (user_id, client_id): the visibility check is a primary-key lookup',
+    keys: 'PK (user_id, department_id): a composite key, so the two columns together are the unique ID · the visibility check is a primary-key lookup',
   },
   {
     name: 'question',
     purpose:
-      'Text, answer notes, author, optional department, review status and the reviewer’s note.',
-    keys: 'client_id set at creation, never changed · deleted_at · no unique on text · full-text and trigram indexes',
+      'The question text, answer notes, author, optional department, review status and the reviewer’s note.',
+    keys: 'department_id set at creation, never changed · deleted_at · text is not unique · full-text and trigram indexes (lookup structures that make text search fast)',
   },
   {
     name: 'tag_category · tag',
     purpose:
-      'The fixed categories: technology, seniority, question type. An Admin manages the values of the last two here and technologies per department.',
+      'The fixed categories: technology, seniority, question type. An Admin manages the values of the last two here, and technologies per department.',
     keys: 'archived_at on a tag hides it from pickers and filters but keeps it on old questions · renaming changes the label, never the stored value',
   },
   {
-    name: 'client_tag',
+    name: 'department_tag',
     purpose:
-      'Which technologies a department offers. Many-to-many: Node.js can sit under MERN and MEAN.',
-    keys: 'PK (client_id, tag_id) · a technology with no department is shown as “Other”',
+      'Which technologies a department offers. It is many-to-many: one technology can belong to several departments. Example: Node.js can sit under MERN and MEAN.',
+    keys: 'PK (department_id, tag_id) · a technology with no department is shown as “Other”',
   },
   {
     name: 'question_tag',
-    purpose: 'Many-to-many link between questions and tags.',
+    purpose:
+      'Links questions and tags. It is many-to-many: a question has many tags, and a tag is on many questions.',
     keys: 'PK (question_id, tag_id)',
   },
   {
     name: 'audit_event',
     purpose:
-      'Who did what and when: question created, edited, reviewed, deleted or restored; user, department, technology and tag changes; duplicate rejected or overridden.',
-    keys: 'append-only: a database trigger refuses UPDATE and DELETE · question_id is null for a rejected duplicate · JSON payload',
+      'The audit trail: who did what and when. It covers question created, edited, reviewed, deleted or restored; user, department, technology and tag changes; and duplicate rejected or overridden.',
+    keys: 'append-only: a database trigger refuses UPDATE and DELETE, so rows can never be changed or removed · question_id is null for a rejected duplicate · JSON payload',
   },
   {
     name: 'notification',
     purpose:
-      'One row when a reviewer decides on a question: who is told, which question, approved or rejected. It holds ids only; the question text is read when it is shown, and only while that person can still see the question.',
-    keys: 'user_id · read_at is null while unread · question_id has no foreign key, so a later delete cannot break it',
+      'One row when a reviewer decides on a question: who is told, which question, approved or rejected. It holds ids only. The question text is read when it is shown, and only while that person can still see the question.',
+    keys: 'user_id · read_at is null while unread · question_id has no foreign key (a database link to another table), so a later delete cannot break it',
   },
   {
     name: 'refresh_token',
-    purpose: 'Server-side record of each refresh token, stored hashed.',
-    keys: 'one family per login · used and revoked timestamps',
+    purpose:
+      'The server’s record of each refresh token (a long-lived token used to get new short-lived ones). It is stored hashed: scrambled one way, so a leak does not reveal the token.',
+    keys: 'one family (a chain of rotated tokens) per login · used and revoked timestamps',
   },
 ];
 
-export const VISIBLE_SQL = `-- the visibility predicate, appended to every read of "question"
-q.deleted_at IS NULL                        -- soft-deleted: gone for everyone
+export const VISIBLE_SQL = `-- the visibility rule (the "predicate"), added to every read of "question"
+q.deleted_at IS NULL                        -- soft-deleted (marked deleted): hidden from everyone
 AND department is not deleted
 -- Admins stop here. Everyone else also needs:
-AND ( q.client_id IS NULL                   -- global, or a grant:
-      OR EXISTS (SELECT 1 FROM client_grant g
-                 WHERE g.user_id = $actor AND g.client_id = q.client_id) )
+AND ( q.department_id IS NULL                   -- global (no department), or you hold a grant:
+      OR EXISTS (SELECT 1 FROM department_grant g
+                 WHERE g.user_id = $actor AND g.department_id = q.department_id) )
 AND CASE role                               -- and a status their role may read:
       WHEN READ-ONLY THEN status = 'APPROVED'
       WHEN AUTHOR    THEN status = 'APPROVED' OR author = $actor
@@ -521,43 +564,43 @@ export const STATUS_ROWS: { status: string; code: string; from: string; meaning:
   {
     status: '400',
     code: 'VALIDATION_ERROR',
-    from: 'Zod validation',
+    from: 'Zod validation (the input check)',
     meaning:
-      'Wrong shape, a field that is not allowed, an unknown or archived tag, a technology that is not one of the department’s, or a NUL character.',
+      'The input has the wrong shape, has a field that is not allowed, names an unknown or archived tag, names a technology that is not one of the department’s, or contains a NUL character.',
   },
   {
     status: '401',
     code: 'UNAUTHENTICATED',
     from: 'requireAuth',
-    meaning: 'No session, an expired one, or a disabled account.',
+    meaning: 'You are not signed in: no session, an expired one, or a disabled account.',
   },
   {
     status: '403',
     code: 'FORBIDDEN',
     from: 'requireRole, or the service on edit',
     meaning:
-      'Your role does not allow it, or you are an Author editing someone else’s question that you can see.',
+      'You are signed in, but your role does not allow it. Or you are an Author editing someone else’s question that you can see.',
   },
   {
     status: '404',
     code: 'NOT_FOUND',
     from: 'The service and the SQL',
     meaning:
-      'Missing, or hidden from you: the two look the same. Also a client you hold no grant for.',
+      'Missing, or hidden from you: the two look the same. Also used for a client you hold no grant for.',
   },
   {
     status: '409',
     code: 'DUPLICATE_SUSPECTED',
     from: 'Create',
     meaning:
-      'A very similar question already exists. Send it again with confirmNotDuplicate to override.',
+      'A very similar question already exists. Send the request again with confirmNotDuplicate to override.',
   },
   {
     status: '409',
     code: 'LAST_ADMIN · NOT_PENDING · DEPARTMENT_DELETED',
     from: 'The services',
     meaning:
-      'The last active admin cannot be removed, a question was already reviewed, or its department must be restored first.',
+      'The request clashes with the current state. The last active admin cannot be removed, a question was already reviewed, or its department must be restored first.',
   },
   {
     status: '413',
@@ -568,7 +611,7 @@ export const STATUS_ROWS: { status: string; code: string; from: string; meaning:
   {
     status: '429',
     code: 'RATE_LIMITED',
-    from: 'Rate limit',
+    from: 'Rate limit (a cap on requests per minute)',
     meaning:
       'Too many requests from this account in a minute, or too many sign-in attempts from this address.',
   },
@@ -576,39 +619,40 @@ export const STATUS_ROWS: { status: string; code: string; from: string; meaning:
     status: '500',
     code: 'INTERNAL',
     from: 'The error handler',
-    meaning: 'Something unexpected. The detail is logged on the server and never sent to you.',
+    meaning:
+      'Something unexpected went wrong. The detail is logged on the server and never sent to you.',
   },
 ];
 
 export const TRACES: { who: string; request: string; path: string; result: string }[] = [
   {
-    who: 'Una (read-only)',
+    who: 'User (read-only)',
     request: 'POST /questions',
-    path: 'requireAuth passes, requireRole stops her.',
+    path: 'requireAuth passes, because the user is signed in. requireRole then stops them.',
     result: '403',
   },
   {
-    who: 'Carol (no grants)',
+    who: 'User (no department grants)',
     request: 'GET a MERN question by id',
-    path: 'The visibility check finds no row, exactly as for an id that does not exist.',
+    path: 'The visibility check finds no row, exactly as for an id that does not exist. So they get “not found”, not “forbidden”.',
     result: '404',
   },
   {
-    who: 'Alice (Author)',
-    request: 'PATCH a global question Bob wrote',
-    path: 'She can see it, so visibility passes. The role check then finds she is not the author.',
+    who: 'Author',
+    request: 'PATCH a global question another Author wrote',
+    path: 'The Author can see it, so the visibility check passes. The role check then finds they are not the question’s author.',
     result: '403',
   },
   {
-    who: 'Rita (Reviewer, all departments)',
+    who: 'Reviewer (all departments)',
     request: 'POST a review of a pending AI-ML question',
-    path: 'Visible through her AI-ML grant. A pending question can be reviewed by a Reviewer who is not its author.',
+    path: 'Visible through the AI-ML grant. A Reviewer who is not the author may review a pending question.',
     result: '200',
   },
   {
-    who: 'Rita (Reviewer, all departments)',
+    who: 'Reviewer (all departments)',
     request: 'PATCH a question to edit it',
-    path: 'Visibility passes, then the role check finds only the question’s author, or an Admin, may edit. Reviewers decide, they do not edit.',
+    path: 'Visibility passes, then the role check finds that only the question’s author, or an Admin, may edit. Reviewers decide, they do not edit.',
     result: '403',
   },
 ];
@@ -636,13 +680,13 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'Writes question and tags' },
           { text: 'Writes an audit event' },
-          { text: 'One transaction' },
+          { text: 'One transaction: all or nothing' },
         ],
       },
       {
         title: 'Edit',
         leaves: [
-          { text: 'Refuses a stale save (409)' },
+          { text: 'Refuses an out-of-date save (409)' },
           { text: 'Updates question' },
           { text: 'Audit event holds the diff' },
         ],
@@ -650,7 +694,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       {
         title: 'Review',
         leaves: [
-          { text: 'Row lock, then the decision' },
+          { text: 'Locks the row, then decides' },
           { text: 'Audit event holds the note' },
           { text: 'Writes a notification for the author' },
         ],
@@ -702,7 +746,10 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       },
       {
         title: '04 Build',
-        leaves: [{ text: 'Routes, services, repositories' }, { text: 'Vertical slices' }],
+        leaves: [
+          { text: 'Routes, services, repositories' },
+          { text: 'Vertical slices (by feature)' },
+        ],
       },
       {
         title: '05 Run',
@@ -768,7 +815,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         title: 'Global',
         leaves: [
           { text: `All ${DEMO_ACCOUNTS.length} demo accounts` },
-          { text: 'Questions with no client' },
+          { text: 'Questions with no department' },
         ],
       },
       ...DEMO_CLIENTS.map((c) => ({
@@ -931,7 +978,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       {
         title: 'Access',
         tone: 'restricted',
-        leaves: [{ text: 'client' }, { text: 'client_grant: the visibility lookup' }],
+        leaves: [{ text: 'department' }, { text: 'department_grant: the visibility lookup' }],
       },
       {
         title: 'Content',
@@ -939,7 +986,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'question' },
           { text: 'question_tag' },
           { text: 'tag and tag_category' },
-          { text: 'client_tag: department technologies' },
+          { text: 'department_tag: department technologies' },
         ],
       },
       {
@@ -974,9 +1021,9 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'Lasts 7 days' },
           { text: 'Sent to /api/auth only' },
-          { text: 'Used once; a replay revokes the session' },
+          { text: 'Used once; reuse revokes the session' },
           { text: 'Revoking it ends the access token too' },
-          { text: 'Stored hashed' },
+          { text: 'Stored hashed (scrambled)' },
         ],
       },
       {
@@ -1000,6 +1047,60 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Same error for every failure' },
           { text: 'Rate-limited per address and email' },
           { text: 'And per address across all emails' },
+        ],
+      },
+    ],
+  },
+  decisions: {
+    center: 'Technical decisions',
+    branches: [
+      {
+        title: 'Repository',
+        leaves: [
+          { text: 'npm workspaces, two apps' },
+          { text: 'Strict TypeScript' },
+          { text: 'Exact versions, ADRs' },
+        ],
+      },
+      {
+        title: 'Folders',
+        leaves: [
+          { text: 'API: by feature, layers inside' },
+          { text: 'Web: app, features, shared' },
+          { text: 'One module reads questions' },
+        ],
+      },
+      {
+        title: 'Backend',
+        leaves: [
+          { text: 'Express 5, route → service → repo' },
+          { text: 'Zod first, one error handler' },
+          { text: 'Cookies, locks, soft delete' },
+        ],
+      },
+      {
+        title: 'Database',
+        leaves: [
+          { text: 'PostgreSQL only' },
+          { text: 'Prisma writes, raw SQL reads' },
+          { text: 'Composite keys, UUIDs, RESTRICT' },
+          { text: 'Append-only audit' },
+        ],
+      },
+      {
+        title: 'Frontend',
+        leaves: [
+          { text: 'React 19 + Vite' },
+          { text: 'TanStack Query, URL filters' },
+          { text: 'Own UI kit on native elements' },
+        ],
+      },
+      {
+        title: 'Delivery',
+        leaves: [
+          { text: 'Compose, migrate job, nginx' },
+          { text: 'Real-database tests' },
+          { text: 'Guards, property, mutation, E2E' },
         ],
       },
     ],
@@ -1081,48 +1182,6 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Attack tests that failed first' },
           { text: 'Route sweep and architecture guard' },
           { text: 'Written security review' },
-        ],
-      },
-    ],
-  },
-  practices: {
-    center: 'Engineering practices',
-    branches: [
-      {
-        title: 'Testing',
-        leaves: [
-          { text: 'Unit tests for pure logic' },
-          { text: 'Integration on a real database' },
-          { text: 'UI tests by role and name' },
-          { text: 'About 99% API coverage' },
-        ],
-      },
-      {
-        title: 'TDD and red team',
-        leaves: [
-          { text: 'Test first, then the fix' },
-          { text: 'Known gaps documented as tests' },
-          { text: 'Bugs become regression tests' },
-        ],
-      },
-      {
-        title: 'Quality',
-        leaves: [
-          { text: 'TypeScript, ESLint, Prettier' },
-          { text: 'No speculative abstractions' },
-          { text: 'Contract generated from schemas' },
-        ],
-      },
-      {
-        title: 'Accessibility',
-        leaves: [{ text: 'Semantic HTML first' }, { text: 'axe in the tests' }],
-      },
-      {
-        title: 'Delivery',
-        leaves: [
-          { text: 'Branch per ticket, small commits' },
-          { text: 'Committed migrations, seeded demo data' },
-          { text: 'Docs and ADRs kept in step' },
         ],
       },
     ],

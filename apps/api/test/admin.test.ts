@@ -157,7 +157,7 @@ describe('users', () => {
       clientIds: [world.globex.id, UUID],
     });
     expect(res.status).toBe(400);
-    expect(await db.clientGrant.count({ where: { userId: u.id } })).toBe(1);
+    expect(await db.departmentGrant.count({ where: { userId: u.id } })).toBe(1);
   });
 });
 
@@ -171,7 +171,7 @@ describe('departments', () => {
     const dup = await call(admin(), 'post', '/clients', { name: 'Initech' });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('DEPARTMENT_EXISTS');
-    expect(await db.client.count({ where: { name: 'Initech' } })).toBe(1);
+    expect(await db.department.count({ where: { name: 'Initech' } })).toBe(1);
   });
 
   it.each([

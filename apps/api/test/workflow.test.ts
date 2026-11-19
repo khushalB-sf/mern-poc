@@ -100,7 +100,7 @@ describe('GET /questions/summary', () => {
     });
     expect((await summary(users.reviewerNoGrant)).toReview).toBe(0);
     // an author who authored it but lost the grant no longer sees it, so it is not counted for them either
-    await db.clientGrant.deleteMany({ where: { userId: users.authorAcme.id } });
+    await db.departmentGrant.deleteMany({ where: { userId: users.authorAcme.id } });
     expect((await summary(users.authorAcme)).mine).toEqual({
       pending: 0,
       rejected: 0,
@@ -152,7 +152,7 @@ describe('GET /questions?mine=true', () => {
       authorId: users.authorAcme.id,
       clientId: acme.id,
     });
-    await db.clientGrant.deleteMany({ where: { userId: users.authorAcme.id } });
+    await db.departmentGrant.deleteMany({ where: { userId: users.authorAcme.id } });
     expect((await as(users.authorAcme, 'get', '/api/questions?mine=true')).body.items).toEqual([]);
     for (const v of ['false', '1', 'yes', '']) {
       expect((await as(users.authorA, 'get', `/api/questions?mine=${v}`)).status, v).toBe(400);
@@ -284,7 +284,7 @@ describe('notifications', () => {
     expect(JSON.stringify(row)).not.toContain('Please review me');
 
     // the author is moved out of the department: they can no longer read that question, so neither its text
-    await db.clientGrant.deleteMany({ where: { userId: world.users.authorAcme.id } });
+    await db.departmentGrant.deleteMany({ where: { userId: world.users.authorAcme.id } });
     const after = await as(world.users.authorAcme, 'get', '/api/notifications');
     expect(after.body.items).toHaveLength(1);
     expect(after.body.items[0].question).toBeNull();

@@ -68,13 +68,13 @@ export const ENTITIES: Entity[] = [
     ],
   },
   {
-    name: 'client_grant',
+    name: 'department_grant',
     group: 'access',
     x: 310,
     y: 20,
     fields: [
       { name: 'user_id', kind: 'pkfk' },
-      { name: 'client_id', kind: 'pkfk' },
+      { name: 'department_id', kind: 'pkfk' },
     ],
   },
   {
@@ -87,7 +87,7 @@ export const ENTITIES: Entity[] = [
       { name: 'text' },
       { name: 'answer_notes' },
       { name: 'author_id', kind: 'fk' },
-      { name: 'client_id', kind: 'fk' },
+      { name: 'department_id', kind: 'fk' },
       { name: 'status' },
       { name: 'review_note' },
       { name: 'reviewed_by_id', kind: 'fk' },
@@ -109,7 +109,7 @@ export const ENTITIES: Entity[] = [
     ],
   },
   {
-    name: 'client',
+    name: 'department',
     group: 'access',
     x: 600,
     y: 20,
@@ -131,12 +131,12 @@ export const ENTITIES: Entity[] = [
     ],
   },
   {
-    name: 'client_tag',
+    name: 'department_tag',
     group: 'content',
     x: 880,
     y: 20,
     fields: [
-      { name: 'client_id', kind: 'pkfk' },
+      { name: 'department_id', kind: 'pkfk' },
       { name: 'tag_id', kind: 'pkfk' },
     ],
   },
@@ -150,7 +150,7 @@ export const ENTITIES: Entity[] = [
       { name: 'category_id', kind: 'fk' },
       { name: 'value / label' },
       { name: 'archived_at' },
-      { name: 'archived_by_client_id', kind: 'fk' },
+      { name: 'archived_by_department_id', kind: 'fk' },
     ],
   },
   {
@@ -183,11 +183,11 @@ export const EDGES: Edge[] = [
   // access: users <-> departments
   {
     parent: { table: 'app_user', field: 'id', side: 'r' },
-    child: { table: 'client_grant', field: 'user_id', side: 'l' },
+    child: { table: 'department_grant', field: 'user_id', side: 'l' },
   },
   {
-    parent: { table: 'client', field: 'id', side: 'l' },
-    child: { table: 'client_grant', field: 'client_id', side: 'r' },
+    parent: { table: 'department', field: 'id', side: 'l' },
+    child: { table: 'department_grant', field: 'department_id', side: 'r' },
   },
   // who wrote and who reviewed
   {
@@ -201,8 +201,8 @@ export const EDGES: Edge[] = [
   },
   // department owns a question (or it is global)
   {
-    parent: { table: 'client', field: 'description', side: 'l' },
-    child: { table: 'question', field: 'client_id', side: 'r' },
+    parent: { table: 'department', field: 'description', side: 'l' },
+    child: { table: 'question', field: 'department_id', side: 'r' },
     optional: true,
   },
   // tags on questions
@@ -216,12 +216,12 @@ export const EDGES: Edge[] = [
   },
   // technologies of a department
   {
-    parent: { table: 'client', field: 'id', side: 'r' },
-    child: { table: 'client_tag', field: 'client_id', side: 'l' },
+    parent: { table: 'department', field: 'id', side: 'r' },
+    child: { table: 'department_tag', field: 'department_id', side: 'l' },
   },
   {
     parent: { table: 'tag', field: 'id', side: 't' },
-    child: { table: 'client_tag', field: 'tag_id', side: 'b' },
+    child: { table: 'department_tag', field: 'tag_id', side: 'b' },
   },
   // taxonomy
   {
@@ -229,8 +229,8 @@ export const EDGES: Edge[] = [
     child: { table: 'tag', field: 'category_id', side: 'b' },
   },
   {
-    parent: { table: 'client', field: 'deleted_at', side: 'b' },
-    child: { table: 'tag', field: 'archived_by_client_id', side: 'l' },
+    parent: { table: 'department', field: 'deleted_at', side: 'b' },
+    child: { table: 'tag', field: 'archived_by_department_id', side: 'l' },
     optional: true,
   },
   // audit
@@ -477,9 +477,9 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'grants',
     text: (
       <>
-        <Code>app_user</Code> ─ <Code>client_grant</Code> ─ <Code>client</Code>: a user can hold
-        many grants and a department can be granted to many users. The visibility check is a lookup
-        on this table’s primary key.
+        <Code>app_user</Code> ─ <Code>department_grant</Code> ─ <Code>department</Code>: a user can
+        hold many grants (permissions to see a department), and a department can be granted to many
+        users. The visibility check is a quick lookup on this table’s primary key (its unique id).
       </>
     ),
   },
@@ -488,7 +488,7 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     text: (
       <>
         <Code>question</Code> → <Code>app_user</Code> (<Code>author_id</Code>): every question has
-        exactly one author.
+        exactly one author (a foreign key: a column that points to a row in another table).
       </>
     ),
   },
@@ -496,8 +496,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'reviewer',
     text: (
       <>
-        <Code>question</Code> → <Code>app_user</Code> (<Code>reviewed_by_id</Code>): optional, set
-        when a reviewer decides.
+        <Code>question</Code> → <Code>app_user</Code> (<Code>reviewed_by_id</Code>): optional. It is
+        filled in when a reviewer decides.
       </>
     ),
   },
@@ -505,8 +505,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'department',
     text: (
       <>
-        <Code>question</Code> → <Code>client</Code>: optional. No department means a global
-        question.
+        <Code>question</Code> → <Code>department</Code>: optional. With no department, the question
+        is global.
       </>
     ),
   },
@@ -515,7 +515,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     text: (
       <>
         <Code>question</Code> ─ <Code>question_tag</Code> ─ <Code>tag</Code>: many tags per
-        question, many questions per tag.
+        question, and many questions per tag. The middle table <Code>question_tag</Code> holds one
+        row for each pairing.
       </>
     ),
   },
@@ -523,8 +524,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'category',
     text: (
       <>
-        <Code>tag</Code> → <Code>tag_category</Code>: every tag belongs to one list (technology,
-        seniority or question type).
+        <Code>tag</Code> → <Code>tag_category</Code>: every tag belongs to exactly one list
+        (technology, seniority or question type).
       </>
     ),
   },
@@ -532,8 +533,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'technologies',
     text: (
       <>
-        <Code>client</Code> ─ <Code>client_tag</Code> ─ <Code>tag</Code>: the technologies a
-        department offers. Many to many, so one technology can serve several departments.
+        <Code>department</Code> ─ <Code>department_tag</Code> ─ <Code>tag</Code>: the technologies a
+        department offers. It is many to many, so one technology can serve several departments.
       </>
     ),
   },
@@ -541,9 +542,9 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'archived',
     text: (
       <>
-        <Code>tag</Code> → <Code>client</Code> (<Code>archived_by_client_id</Code>): optional.
-        Remembers which department’s deletion archived the technology, so restoring that department
-        brings it back.
+        <Code>tag</Code> → <Code>department</Code> (<Code>archived_by_department_id</Code>):
+        optional. It remembers which department’s deletion archived the technology, so restoring
+        that department brings it back.
       </>
     ),
   },
@@ -560,8 +561,9 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     id: 'sessions',
     text: (
       <>
-        <Code>refresh_token</Code> → <Code>app_user</Code>: one row per refresh token, grouped into
-        a family per sign-in.
+        <Code>refresh_token</Code> → <Code>app_user</Code>: one row per refresh token (the
+        long-lived token that gets a new access token). The tokens from one sign-in share a family
+        id.
       </>
     ),
   },
@@ -570,8 +572,8 @@ export const RELATIONSHIPS: { id: string; text: ReactNode }[] = [
     text: (
       <>
         <Code>notification</Code> → <Code>app_user</Code>: who is told. Its <Code>question_id</Code>{' '}
-        is deliberately <em>not</em> a foreign key, so a question that is later deleted or hidden
-        can never break a notification.
+        is deliberately <em>not</em> a foreign key (the database does not enforce the link), so a
+        question that is later deleted or hidden can never break a notification.
       </>
     ),
   },

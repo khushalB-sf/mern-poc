@@ -103,7 +103,7 @@ export async function setTagArchived(
     if (!current || (current.archivedAt !== null) === archived) throw notFound('Tag not found');
     await tx.tag.update({
       where: { id },
-      data: { archivedAt: archived ? new Date() : null, archivedByClientId: null },
+      data: { archivedAt: archived ? new Date() : null, archivedByDepartmentId: null },
     });
     await recordAudit(tx, log, {
       type: archived ? 'TAG_ARCHIVED' : 'TAG_RESTORED',

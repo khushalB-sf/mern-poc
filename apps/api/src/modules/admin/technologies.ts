@@ -8,7 +8,7 @@ import { recordAudit } from '../audit/audit.repo.js';
 import { tagUsageCounts } from '../questions/question.repo.js';
 
 /**
- * Technologies belong to departments (many-to-many, `client_tag`). A technology is "exclusive" to a
+ * Technologies belong to departments (many-to-many, `department_tag`). A technology is "exclusive" to a
  * department when no other live department uses it: only those are archived along with it. Archived
  * technologies keep their links, so each department can list and restore its own.
  */
@@ -58,29 +58,37 @@ export const freeValue = (base: string, taken: Set<string>) => {
 };
 
 const liveDepartment = async (db: Queryable, id: string) => {
-  const c = await db.client.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  const c = await db.department.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
   if (!c) throw notFound('Department not found');
 };
 
 /** Ids of the department's active technologies that no other live department uses. */
-export async function exclusiveTechnologyIds(db: Queryable, clientId: string): Promise<string[]> {
+export async function exclusiveTechnologyIds(
+  db: Queryable,
+  departmentId: string,
+): Promise<string[]> {
   const tags = await db.tag.findMany({
-    where: { ...IN_TECH, archivedAt: null, clients: { some: { clientId } } },
+    where: { ...IN_TECH, archivedAt: null, departments: { some: { departmentId } } },
     select: {
       id: true,
-      clients: { select: { clientId: true, client: { select: { deletedAt: true } } } },
+      departments: { select: { departmentId: true, department: { select: { deletedAt: true } } } },
     },
   });
   return tags
-    .filter((t) => !t.clients.some((l) => l.clientId !== clientId && l.client.deletedAt === null))
+    .filter(
+      (t) =>
+        !t.departments.some(
+          (l) => l.departmentId !== departmentId && l.department.deletedAt === null,
+        ),
+    )
     .map((t) => t.id);
 }
 
-export async function listDepartmentTechnologies(db: Db, clientId: string) {
-  await liveDepartment(db, clientId);
+export async function listDepartmentTechnologies(db: Db, departmentId: string) {
+  await liveDepartment(db, departmentId);
   const [links, available] = await Promise.all([
-    db.clientTag.findMany({
-      where: { clientId, tag: IN_TECH },
+    db.departmentTag.findMany({
+      where: { departmentId, tag: IN_TECH },
       select: {
         tag: {
           select: {
@@ -88,13 +96,15 @@ export async function listDepartmentTechnologies(db: Db, clientId: string) {
             value: true,
             label: true,
             archivedAt: true,
-            clients: { select: { clientId: true, client: { select: { deletedAt: true } } } },
+            departments: {
+              select: { departmentId: true, department: { select: { deletedAt: true } } },
+            },
           },
         },
       },
     }),
     db.tag.findMany({
-      where: { ...IN_TECH, archivedAt: null, clients: { none: { clientId } } },
+      where: { ...IN_TECH, archivedAt: null, departments: { none: { departmentId } } },
       orderBy: { label: 'asc' },
       select: { id: true, label: true },
     }),
@@ -111,7 +121,9 @@ export async function listDepartmentTechnologies(db: Db, clientId: string) {
       label: t.label,
       archived: t.archivedAt !== null,
       questionCount: usage.get(t.id) ?? 0,
-      shared: t.clients.some((l) => l.clientId !== clientId && l.client.deletedAt === null),
+      shared: t.departments.some(
+        (l) => l.departmentId !== departmentId && l.department.deletedAt === null,
+      ),
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
   return {
@@ -126,7 +138,7 @@ export async function addDepartmentTechnology(
   db: Db,
   log: Logger,
   actor: AuthUser,
-  clientId: string,
+  departmentId: string,
   rawLabel: string,
 ) {
   const label = rawLabel.trim();
@@ -135,7 +147,7 @@ export async function addDepartmentTechnology(
 
   const run = () =>
     db.$transaction(async (tx) => {
-      await liveDepartment(tx, clientId);
+      await liveDepartment(tx, departmentId);
       const all = await tx.tag.findMany({
         where: IN_TECH,
         select: { id: true, value: true, label: true, archivedAt: true },
@@ -160,7 +172,7 @@ export async function addDepartmentTechnology(
       } else if (tag.archivedAt) {
         await tx.tag.update({
           where: { id: tag.id },
-          data: { archivedAt: null, archivedByClientId: null },
+          data: { archivedAt: null, archivedByDepartmentId: null },
         });
         await recordAudit(tx, log, {
           type: 'TAG_RESTORED',
@@ -168,15 +180,15 @@ export async function addDepartmentTechnology(
           payload: { tagId: tag.id, label: tag.label },
         });
       }
-      const link = await tx.clientTag.createMany({
-        data: [{ clientId, tagId: tag.id }],
+      const link = await tx.departmentTag.createMany({
+        data: [{ departmentId, tagId: tag.id }],
         skipDuplicates: true,
       });
       if (link.count > 0) {
         await recordAudit(tx, log, {
           type: 'TAG_LINKED',
           actorId: actor.id,
-          payload: { tagId: tag.id, label: tag.label, clientId },
+          payload: { tagId: tag.id, label: tag.label, clientId: departmentId },
         });
       }
       return { id: tag.id, label: tag.label, created: !existing };
@@ -195,23 +207,24 @@ export async function removeDepartmentTechnology(
   db: Db,
   log: Logger,
   actor: AuthUser,
-  clientId: string,
+  departmentId: string,
   tagId: string,
 ) {
   await db.$transaction(async (tx) => {
-    await liveDepartment(tx, clientId);
-    const link = await tx.clientTag.findFirst({
-      where: { clientId, tagId, tag: { ...IN_TECH, archivedAt: null } },
+    await liveDepartment(tx, departmentId);
+    const link = await tx.departmentTag.findFirst({
+      where: { departmentId, tagId, tag: { ...IN_TECH, archivedAt: null } },
       select: { tag: { select: { label: true } } },
     });
     if (!link) throw notFound('Technology not found in this department');
-    const exclusive = (await exclusiveTechnologyIds(tx, clientId)).includes(tagId);
-    const payload = { tagId, label: link.tag.label, clientId };
+    const exclusive = (await exclusiveTechnologyIds(tx, departmentId)).includes(tagId);
+    // Audit payloads keep the key `clientId`: audit_event is append-only, so old rows already use it.
+    const payload = { tagId, label: link.tag.label, clientId: departmentId };
     if (exclusive) {
       await tx.tag.update({ where: { id: tagId }, data: { archivedAt: new Date() } });
       await recordAudit(tx, log, { type: 'TAG_ARCHIVED', actorId: actor.id, payload });
     } else {
-      await tx.clientTag.delete({ where: { clientId_tagId: { clientId, tagId } } });
+      await tx.departmentTag.delete({ where: { departmentId_tagId: { departmentId, tagId } } });
       await recordAudit(tx, log, { type: 'TAG_UNLINKED', actorId: actor.id, payload });
     }
   });
@@ -221,24 +234,24 @@ export async function restoreDepartmentTechnology(
   db: Db,
   log: Logger,
   actor: AuthUser,
-  clientId: string,
+  departmentId: string,
   tagId: string,
 ) {
   await db.$transaction(async (tx) => {
-    await liveDepartment(tx, clientId);
-    const link = await tx.clientTag.findFirst({
-      where: { clientId, tagId, tag: { ...IN_TECH, archivedAt: { not: null } } },
+    await liveDepartment(tx, departmentId);
+    const link = await tx.departmentTag.findFirst({
+      where: { departmentId, tagId, tag: { ...IN_TECH, archivedAt: { not: null } } },
       select: { tag: { select: { label: true } } },
     });
     if (!link) throw notFound('Archived technology not found in this department');
     await tx.tag.update({
       where: { id: tagId },
-      data: { archivedAt: null, archivedByClientId: null },
+      data: { archivedAt: null, archivedByDepartmentId: null },
     });
     await recordAudit(tx, log, {
       type: 'TAG_RESTORED',
       actorId: actor.id,
-      payload: { tagId, label: link.tag.label, clientId },
+      payload: { tagId, label: link.tag.label, clientId: departmentId },
     });
   });
 }
@@ -273,7 +286,7 @@ export async function renameTechnology(
   });
 }
 
-const NO_LIVE_DEPARTMENT = { clients: { none: { client: { deletedAt: null } } } } as const;
+const NO_LIVE_DEPARTMENT = { departments: { none: { department: { deletedAt: null } } } } as const;
 
 /** The "Other" group: technologies no live department uses, active and archived. */
 export async function listOtherTechnologies(db: Db) {
@@ -313,11 +326,11 @@ export async function setOtherTechnologyArchived(
       select: {
         label: true,
         archivedAt: true,
-        clients: { select: { client: { select: { deletedAt: true } } } },
+        departments: { select: { department: { select: { deletedAt: true } } } },
       },
     });
     if (!current) throw notFound('Technology not found');
-    if (current.clients.some((l) => l.client.deletedAt === null)) {
+    if (current.departments.some((l) => l.department.deletedAt === null)) {
       throw new AppError(
         409,
         'TECHNOLOGY_IN_DEPARTMENT',
@@ -327,7 +340,7 @@ export async function setOtherTechnologyArchived(
     if ((current.archivedAt !== null) === archived) throw notFound('Technology not found');
     await tx.tag.update({
       where: { id: tagId },
-      data: { archivedAt: archived ? new Date() : null, archivedByClientId: null },
+      data: { archivedAt: archived ? new Date() : null, archivedByDepartmentId: null },
     });
     await recordAudit(tx, log, {
       type: archived ? 'TAG_ARCHIVED' : 'TAG_RESTORED',

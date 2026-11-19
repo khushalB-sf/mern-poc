@@ -104,17 +104,17 @@ Where each step is: steps 1-7 in `http/app.ts` (`createApp`, in that order); 8-1
 | Model (table) | Purpose | Notable design |
 |---|---|---|
 | `AppUser` (`app_user`) | Accounts | unique email; `active` flag; `deleted_at` (soft delete) |
-| `Client` (`client`) | A **department** (the code still says "client") | unique name; `deleted_at` |
-| `ClientGrant` (`client_grant`) | "this user may see this department" | composite primary key (user, department): the visibility check is a key lookup |
-| `Question` | Text, answer notes, author, optional department, status, reviewer, review note | `client_id` set at creation and never changed; `deleted_at`; **no unique constraint on text** by design |
+| `Department` (`department`) | A **department** (the API still says "client") | unique name; `deleted_at` |
+| `DepartmentGrant` (`department_grant`) | "this user may see this department" | composite primary key (user, department): the visibility check is a key lookup |
+| `Question` | Text, answer notes, author, optional department, status, reviewer, review note | `department_id` set at creation and never changed; `deleted_at`; **no unique constraint on text** by design |
 | `TagCategory`, `Tag` | Categories (technology, seniority, type) and their values | `archived_at` hides a tag without removing it from old questions |
-| `ClientTag` (`client_tag`) | Which technologies a department offers (many-to-many) | composite primary key |
+| `DepartmentTag` (`department_tag`) | Which technologies a department offers (many-to-many) | composite primary key |
 | `QuestionTag` (`question_tag`) | Question ↔ tag (many-to-many) | composite primary key |
 | `AuditEvent` (`audit_event`) | Who did what, when, with a JSON payload | a database trigger refuses UPDATE and DELETE |
 | `RefreshToken` (`refresh_token`) | Server-side record of each refresh token, **hashed** | one "family" per login; used/revoked timestamps |
 | `Notification` | "Your question was approved/rejected" | stores ids only, no question text |
 
-Relationships to be able to draw: user ─< grants >─ department ─< questions >─< tags; department ─< client_tag >─ tag. Indexes: a GIN index on the full-text expression and a trigram index on normalised text (for the duplicate check). Both are created in SQL migrations and **must match the query expression exactly**, or Postgres will not use them (`SEARCH_VECTOR` and `NORMALISED_TEXT` in `question.repo.ts` carry that warning).
+Relationships to be able to draw: user ─< grants >─ department ─< questions >─< tags; department ─< department_tag >─ tag. Indexes: a GIN index on the full-text expression and a trigram index on normalised text (for the duplicate check). Both are created in SQL migrations and **must match the query expression exactly**, or Postgres will not use them (`SEARCH_VECTOR` and `NORMALISED_TEXT` in `question.repo.ts` carry that warning).
 
 ### Why Prisma for writes and raw SQL for question reads
 - **Writes** use the Prisma client inside `db.$transaction(...)`: a change and its audit row commit together or not at all.
@@ -265,13 +265,13 @@ Logging, for every feature: `pino-http` logs each request as JSON with a server-
 - **Web**: `admin/AdminUsersPage.tsx` + `UserDialog.tsx`: search by name/email (debounced), **Load more** (cursor paging), add/edit dialog (name, email, role, active, password, department checkboxes), delete with confirm, a **Deleted users** list with Restore.
 - **API** (`modules/admin/routes.ts`, all behind `requireAuth` → rate limit → `requireRole('ADMIN')`): `GET/POST /admin/users`, `PATCH/DELETE /admin/users/:id`, `PUT /admin/users/:id/clients`, `POST /admin/users/:id/restore`.
 - **Logic** (`admin/users.ts`): email unique (409 `EMAIL_EXISTS`), password hashed before the transaction (Argon2 is slow by design); you cannot change your own role or deactivate yourself; **the last active admin cannot be removed or demoted** (checked inside the transaction, so two admins can't demote each other at once); setting a password or deactivating signs the user out everywhere; a restored user comes back **inactive** until activated.
-- **Database**: `app_user`, `client_grant` (replaced as a set), `refresh_token` (revoked), `audit_event` (`USER_CREATED`, `USER_UPDATED`, `USER_ROLE_CHANGED`, `USER_DELETED`, `USER_RESTORED`, `USER_CLIENTS_CHANGED`).
+- **Database**: `app_user`, `department_grant` (replaced as a set), `refresh_token` (revoked), `audit_event` (`USER_CREATED`, `USER_UPDATED`, `USER_ROLE_CHANGED`, `USER_DELETED`, `USER_RESTORED`, `USER_CLIENTS_CHANGED`).
 - **Tests**: `admin.test.ts`, `admin.manage.test.ts`, `admin.paging.test.ts`; the `%`/`_` in a search is escaped so it finds them literally.
 
 ### C11. Admin: departments
 - **Web**: `AdminDepartmentsPage.tsx` (list with user counts, create/edit dialog, delete confirm that first shows the **impact**, deleted list with Restore).
 - **API**: `GET/POST /admin/clients`, `PATCH/DELETE /admin/clients/:id`, `GET /admin/clients/:id/impact`, `POST /admin/clients/:id/restore`.
-- **Logic** (`admin/departments.ts`): unique name (409 `DEPARTMENT_EXISTS`); `impact` = how many questions, how many pending, how many users, how many technologies would be hidden; **delete** hides the department (its questions disappear via the visibility rule) and archives the technologies **only it used**, tagging them with `archived_by_client_id`; **restore** brings back exactly those, and a technology an admin archived by hand stays archived.
+- **Logic** (`admin/departments.ts`): unique name (409 `DEPARTMENT_EXISTS`); `impact` = how many questions, how many pending, how many users, how many technologies would be hidden; **delete** hides the department (its questions disappear via the visibility rule) and archives the technologies **only it used**, tagging them with `archived_by_department_id`; **restore** brings back exactly those, and a technology an admin archived by hand stays archived.
 - **Tests**: `admin.manage.test.ts`, web `admin.departments.test.tsx`, `admin.restore.test.tsx`.
 
 ### C12. Admin: technologies per department, and "Other"
@@ -279,7 +279,7 @@ Logging, for every feature: `pino-http` logs each request as JSON with a server-
 - **Web**: `DepartmentTechnologies.tsx` (inside the department dialog: active list with Rename/Remove, Archived list with Restore, suggestions of technologies other departments already have), `OtherTechnologies.tsx` (technologies with no department).
 - **API**: `GET/POST /admin/clients/:id/technologies`, `DELETE/POST …/technologies/:tagId[/restore]`, `PATCH /admin/technologies/:id`, `GET /admin/technologies/other`, archive/restore for "Other".
 - **Logic** (`admin/technologies.ts`): names are matched by a normalised key (`keyOf`: NFKC, lower-case, ignore spaces `.` `-` `_`) so "Next.js" and "next js" are one technology; the stored `value` is a URL-safe slug (`slugOf`: `C++` → `c-plus-plus`); adding links an existing technology or creates it; **remove** unlinks when shared, archives when exclusive; concurrent adds of the same name are handled by retrying on the unique-constraint error.
-- **Database**: `tag`, `client_tag`, `audit_event` (`TAG_CREATED`, `TAG_LINKED`, `TAG_UNLINKED`, `TAG_ARCHIVED`, `TAG_RESTORED`, `TAG_UPDATED`).
+- **Database**: `tag`, `department_tag`, `audit_event` (`TAG_CREATED`, `TAG_LINKED`, `TAG_UNLINKED`, `TAG_ARCHIVED`, `TAG_RESTORED`, `TAG_UPDATED`).
 - **Tests**: `admin.manage.test.ts`, `properties.test.ts` (name keys/slugs over generated input), web `department.technologies.test.tsx`, `admin.other.test.tsx`.
 
 ### C13. Admin: seniority and type tags

@@ -335,7 +335,7 @@ describe('PATCH /questions/:id: AUTH-03 edit matrix (direct by ID)', () => {
     expect((await patch(world.users.authorAcme, acmeQ.id, { answerNotes: 'before' })).status).toBe(
       200,
     );
-    await db.clientGrant.deleteMany({ where: { userId: world.users.authorAcme.id } });
+    await db.departmentGrant.deleteMany({ where: { userId: world.users.authorAcme.id } });
     expect((await patch(world.users.authorAcme, acmeQ.id, { answerNotes: 'after' })).status).toBe(
       404,
     );
@@ -363,7 +363,9 @@ describe('PATCH /questions/:id: AUTH-03 edit matrix (direct by ID)', () => {
   it('IMP-05: clientId cannot be changed or added by anyone, even the author', async () => {
     const res = await patch(world.users.authorA, globalByA.id, { clientId: world.acme.id });
     expect(res.status).toBe(400);
-    expect((await db.question.findUnique({ where: { id: globalByA.id } }))!.clientId).toBeNull();
+    expect(
+      (await db.question.findUnique({ where: { id: globalByA.id } }))!.departmentId,
+    ).toBeNull();
   });
 });
 

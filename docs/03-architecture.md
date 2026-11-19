@@ -6,10 +6,10 @@ Status: **Implemented (T-01..T-23). Written before the code and corrected agains
 
 | The product says | The code and API say | Notes |
 | --- | --- | --- |
-| Department | `client` (table `client`, paths `/clients`, `/admin/clients`, response field `client`) | The original brief called it a client. The names stayed in the data model and URLs; the UI and docs say department. |
+| Department | table `department` (Prisma model `Department`); in the public API still `client` (paths `/clients`, `/admin/clients`, field `clientId`, response field `client`, audit event names `CLIENT_*`) | The original brief called it a client, and the table was too (migration `20261126090000_rename_client_to_department` renamed it). The API names stayed so callers and old audit rows are unaffected. |
 | Department filter / department of a question | `clientId` | One name everywhere: the question list URL (`?clientId=`), the API query and the request bodies. |
-| Global question | `client` is `null` | Visible to every signed-in user (subject to review status). |
-| Technology | a `tag` in the category `technology`, linked to departments through `client_tag` | "Other" is the list of technologies no department uses. |
+| Global question | `department_id` is `null` (`clientId` in the API) | Visible to every signed-in user (subject to review status). |
+| Technology | a `tag` in the category `technology`, linked to departments through `department_tag` | "Other" is the list of technologies no department uses. |
 | Retire / archive | `archivedAt` on a tag | Retiring hides a technology; archiving a department hides the technologies only it used (`archivedByClientId`). |
 | Delete (admin) | `deletedAt` (soft delete) | Restorable from the admin pages. |
 
@@ -154,10 +154,10 @@ erDiagram
     text password_hash
     enum role "USER|AUTHOR|REVIEWER"
     bool active }
-  client { uuid id PK
+  department { uuid id PK
     text name UK }
-  client_grant { uuid user_id PK,FK
-    uuid client_id PK,FK }
+  department_grant { uuid user_id PK,FK
+    uuid department_id PK,FK }
   tag_category { uuid id PK
     text slug UK
     text name }
@@ -169,7 +169,7 @@ erDiagram
     text text
     text answer_notes
     uuid author_id FK
-    uuid client_id FK "nullable"
+    uuid department_id FK "nullable"
     timestamptz created_at
     timestamptz updated_at }
   question_tag { uuid question_id PK,FK
@@ -187,9 +187,9 @@ erDiagram
     timestamptz expires_at
     timestamptz used_at
     timestamptz revoked_at }
-  app_user ||--o{ client_grant : has
-  client ||--o{ client_grant : grants
-  client ||--o{ question : owns
+  app_user ||--o{ department_grant : has
+  department ||--o{ department_grant : grants
+  department ||--o{ question : owns
   app_user ||--o{ question : authors
   tag_category ||--o{ tag : contains
   question ||--o{ question_tag : has
@@ -197,7 +197,7 @@ erDiagram
   question ||--o{ audit_event : traced
 ```
 
-**Constraints:** `tag UNIQUE(category_id, value)`; `question.text` CHECK non-blank; **no unique on text** (ADR-007); FKs `ON DELETE RESTRICT`; deletes are soft (`deleted_at` on user, client, question) technologies are archived (`tag.archived_at`) and belong to departments through `client_tag(client_id, tag_id)`; everything is reversible by an admin.
+**Constraints:** `tag UNIQUE(category_id, value)`; `question.text` CHECK non-blank; **no unique on text** (ADR-007); FKs `ON DELETE RESTRICT`; deletes are soft (`deleted_at` on user, department, question) technologies are archived (`tag.archived_at`) and belong to departments through `department_tag(department_id, tag_id)`; everything is reversible by an admin.
 
 **Indexes (each justified; re-justified by EXPLAIN in T-20):**
 
@@ -205,11 +205,11 @@ erDiagram
 |---|---|
 | `question_tag (question_id, tag_id)` PK | loading a question's tags; the `EXISTS` probe |
 | `question_tag (tag_id, question_id)` | tag → questions probe for the filter |
-| `client_grant (user_id, client_id)` PK | visibility `EXISTS` is a PK lookup |
+| `department_grant (user_id, department_id)` PK | visibility `EXISTS` is a PK lookup |
 | GIN expression index `question_search_idx` (weighted `to_tsvector` of text + notes) | keyword search |
 | GIN expression index `question_text_trgm_idx` (`gin_trgm_ops` over normalised text) | duplicate `%` / `similarity` |
 | `question (created_at DESC, id DESC)` | default sort + pagination |
-| `question (client_id)` | client filter, visibility join |
+| `question (department_id)` | client filter, visibility join |
 | `audit_event (question_id, at)` | history |
 | `refresh_token (family_id)` | family revocation |
 

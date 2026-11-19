@@ -9,21 +9,21 @@ import { auditRoutes } from './audit.js';
 import { addTag, listTagCategories, renameTag, setTagArchived } from './tags.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import {
-  clientImpact,
-  createClient,
-  deleteClient,
-  listClients,
+  getDepartmentImpact,
+  createDepartment,
+  deleteDepartment,
+  listDepartments,
   listDeletedQuestionsForAdmin,
-  restoreClient,
+  restoreDepartment,
   restoreDeletedQuestion,
-  updateClient,
+  updateDepartment,
 } from './departments.js';
 import {
   createUser,
   deleteUser,
   listUsers,
   restoreUser,
-  setUserClients,
+  setUserDepartments,
   updateUser,
   type NewUser,
   type UserPatch,
@@ -136,26 +136,26 @@ export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
     validateBody(userClientsSchema),
     async (req, res) => {
       const { id } = res.locals.params as z.infer<typeof idParams>;
-      res.json({ user: await setUserClients(db, req.log, req.user!, id, req.body.clientIds) });
+      res.json({ user: await setUserDepartments(db, req.log, req.user!, id, req.body.clientIds) });
     },
   );
 
   router.get('/clients', async (req, res) => {
-    res.json({ items: await listClients(db, { deleted: req.query.deleted === 'true' }) });
+    res.json({ items: await listDepartments(db, { deleted: req.query.deleted === 'true' }) });
   });
 
   router.get('/clients/:id/impact', validateParams(idParams), async (_req, res) => {
     const { id } = res.locals.params as z.infer<typeof idParams>;
-    res.json(await clientImpact(db, id));
+    res.json(await getDepartmentImpact(db, id));
   });
 
   router.post('/clients/:id/restore', validateParams(idParams), async (req, res) => {
     const { id } = res.locals.params as z.infer<typeof idParams>;
-    res.json({ client: await restoreClient(db, req.log, req.user!, id) });
+    res.json({ client: await restoreDepartment(db, req.log, req.user!, id) });
   });
 
   router.post('/clients', validateBody(createClientSchema), async (req, res) => {
-    res.status(201).json({ client: await createClient(db, req.log, req.user!, req.body) });
+    res.status(201).json({ client: await createDepartment(db, req.log, req.user!, req.body) });
   });
 
   router.patch(
@@ -164,13 +164,13 @@ export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
     validateBody(updateClientSchema),
     async (req, res) => {
       const { id } = res.locals.params as z.infer<typeof idParams>;
-      res.json({ client: await updateClient(db, req.log, req.user!, id, req.body) });
+      res.json({ client: await updateDepartment(db, req.log, req.user!, id, req.body) });
     },
   );
 
   router.delete('/clients/:id', validateParams(idParams), async (req, res) => {
     const { id } = res.locals.params as z.infer<typeof idParams>;
-    await deleteClient(db, req.log, req.user!, id);
+    await deleteDepartment(db, req.log, req.user!, id);
     res.status(204).end();
   });
 

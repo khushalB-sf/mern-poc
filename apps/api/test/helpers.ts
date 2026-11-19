@@ -53,7 +53,7 @@ export async function resetDb(db: Db) {
   const rows = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
   const name = rows[0]?.name;
   if (!name?.endsWith('_test')) throw new Error(`refusing to truncate non-test database "${name}"`);
-  await db.$executeRaw`TRUNCATE audit_event, notification, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
+  await db.$executeRaw`TRUNCATE audit_event, notification, question_tag, department_tag, question, tag, tag_category, department_grant, department, refresh_token, app_user CASCADE`;
 }
 
 // Cheap Argon2 parameters: fixtures need valid hashes, not strong ones.
@@ -91,8 +91,8 @@ export const ensureSession = (db: Db, userId: string) =>
 export async function buildWorld(db: Db) {
   const passwordHash = await fixtureHash;
   const [acme, globex] = await Promise.all([
-    db.client.create({ data: { name: 'Acme' } }),
-    db.client.create({ data: { name: 'Globex' } }),
+    db.department.create({ data: { name: 'Acme' } }),
+    db.department.create({ data: { name: 'Globex' } }),
   ]);
   const user = (
     key: string,
@@ -105,7 +105,7 @@ export async function buildWorld(db: Db) {
         name: key,
         role,
         passwordHash,
-        grants: { create: grants.map((clientId) => ({ clientId })) },
+        grants: { create: grants.map((departmentId) => ({ departmentId })) },
       },
     });
   const users = {
@@ -137,8 +137,8 @@ export async function buildWorld(db: Db) {
   }
   // Acme offers React and Node.js, Globex only React (Node.js is shared, React is not exclusive to Acme).
   const link = (client: { id: string }, ...values: string[]) =>
-    db.clientTag.createMany({
-      data: values.map((v) => ({ clientId: client.id, tagId: tags.get(`technology:${v}`)! })),
+    db.departmentTag.createMany({
+      data: values.map((v) => ({ departmentId: client.id, tagId: tags.get(`technology:${v}`)! })),
     });
   await link(acme, 'react', 'nodejs');
   await link(globex, 'react');
@@ -165,7 +165,7 @@ export async function addQuestion(
       text: q.text,
       answerNotes: q.notes ?? '',
       authorId: q.authorId,
-      clientId: q.clientId ?? null,
+      departmentId: q.clientId ?? null,
       status: q.status ?? 'APPROVED',
       tags: { create: (q.tags ?? []).map((t) => ({ tagId: world.tags.get(t)! })) },
     },

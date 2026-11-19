@@ -18,8 +18,8 @@ const userSelect = {
   role: true,
   active: true,
   grants: {
-    where: { client: { deletedAt: null } },
-    select: { client: { select: { id: true, name: true } } },
+    where: { department: { deletedAt: null } },
+    select: { department: { select: { id: true, name: true } } },
   },
 } satisfies Prisma.AppUserSelect;
 
@@ -31,7 +31,7 @@ const toAdminUser = (u: UserRow) => ({
   name: u.name,
   role: u.role,
   active: u.active,
-  clients: u.grants.map((g) => g.client).sort((a, b) => a.name.localeCompare(b.name)),
+  clients: u.grants.map((g) => g.department).sort((a, b) => a.name.localeCompare(b.name)),
 });
 
 const emailTaken = () =>
@@ -71,7 +71,7 @@ export async function listUsers(db: Db, f: UserListQuery = { limit: 50 }) {
       deletedAt: f.deleted ? { not: null } : null,
       ...(f.role && { role: f.role }),
       ...(f.active !== undefined && { active: f.active }),
-      ...(f.clientId && { grants: { some: { clientId: f.clientId } } }),
+      ...(f.clientId && { grants: { some: { departmentId: f.clientId } } }),
       ...(f.q && {
         OR: [
           { name: { contains: escapeLike(f.q), mode: 'insensitive' as const } },
@@ -112,7 +112,7 @@ export async function createUser(db: Db, log: Logger, actor: AuthUser, input: Ne
   try {
     return await db.$transaction(async (tx) => {
       if (
-        (await tx.client.count({ where: { id: { in: clientIds }, deletedAt: null } })) !==
+        (await tx.department.count({ where: { id: { in: clientIds }, deletedAt: null } })) !==
         clientIds.length
       ) {
         throw badRequest('Unknown department');
@@ -123,7 +123,7 @@ export async function createUser(db: Db, log: Logger, actor: AuthUser, input: Ne
           name: input.name,
           role: input.role,
           passwordHash,
-          grants: { create: clientIds.map((clientId) => ({ clientId })) },
+          grants: { create: clientIds.map((departmentId) => ({ departmentId })) },
         },
         select: { id: true },
       });
@@ -263,8 +263,8 @@ export async function deleteUser(db: Db, log: Logger, actor: AuthUser, id: strin
   });
 }
 
-/** Replaces the user's department (client) grants with exactly `clientIds`. */
-export async function setUserClients(
+/** Replaces the user's department (formerly `client`) grants with exactly `clientIds`. */
+export async function setUserDepartments(
   db: Db,
   log: Logger,
   actor: AuthUser,
@@ -275,22 +275,25 @@ export async function setUserClients(
   return db.$transaction(async (tx) => {
     const user = await tx.appUser.findFirst({
       where: { id, deletedAt: null },
-      select: { grants: { where: { client: { deletedAt: null } }, select: { clientId: true } } },
+      select: {
+        grants: { where: { department: { deletedAt: null } }, select: { departmentId: true } },
+      },
     });
     if (!user) throw notFound('User not found');
     if (
-      (await tx.client.count({ where: { id: { in: wanted }, deletedAt: null } })) !== wanted.length
+      (await tx.department.count({ where: { id: { in: wanted }, deletedAt: null } })) !==
+      wanted.length
     ) {
       throw badRequest('Unknown department');
     }
 
-    const had = new Set(user.grants.map((g) => g.clientId));
+    const had = new Set(user.grants.map((g) => g.departmentId));
     const added = wanted.filter((c) => !had.has(c));
     const removed = [...had].filter((c) => !wanted.includes(c));
     if (added.length + removed.length > 0) {
-      await tx.clientGrant.deleteMany({ where: { userId: id, clientId: { in: removed } } });
-      await tx.clientGrant.createMany({
-        data: added.map((clientId) => ({ userId: id, clientId })),
+      await tx.departmentGrant.deleteMany({ where: { userId: id, departmentId: { in: removed } } });
+      await tx.departmentGrant.createMany({
+        data: added.map((departmentId) => ({ userId: id, departmentId })),
         skipDuplicates: true, // a stale grant to a since-deleted department may already exist
       });
       await recordAudit(tx, log, {
