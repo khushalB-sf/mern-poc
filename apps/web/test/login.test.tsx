@@ -105,7 +105,9 @@ describe('login', () => {
     mockApi({ ...signedOut });
     renderApp('/login');
     await userEvent.click(await screen.findByText('Demo accounts'));
-    await userEvent.click(screen.getByRole('button', { name: /Reviewer for MERN and MEAN/ }));
+    await userEvent.click(
+      screen.getByRole('button', { name: /Rohan Verma, reviewer for MERN and MEAN/ }),
+    );
     await waitFor(() =>
       expect(screen.getByLabelText('Email')).toHaveValue('rohan.verma@mailinator.com'),
     );

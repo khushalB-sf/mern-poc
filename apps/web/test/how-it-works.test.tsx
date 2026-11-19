@@ -66,9 +66,9 @@ describe('how it works page', () => {
 
     // One row per demo account plus the header row.
     expect(within(grants).getAllByRole('row')).toHaveLength(DEMO_ACCOUNTS.length + 1);
-    const rita = within(grants).getByRole('row', { name: /reviewer\.all@example\.com/ });
+    const rita = within(grants).getByRole('row', { name: /hannah\.schmidt@mailinator\.com/ });
     expect(within(rita).getAllByText('Yes')).toHaveLength(1 + DEMO_CLIENTS.length); // Global + every department
-    const none = within(grants).getByRole('row', { name: /author\.none@example\.com/ });
+    const none = within(grants).getByRole('row', { name: /chloe\.martin@mailinator\.com/ });
     expect(within(none).getAllByText('Yes')).toHaveLength(1); // Global only
   });
 
@@ -160,7 +160,7 @@ describe('how it works page', () => {
     const map = await screen.findByRole('list', { name: 'Grant: what you can see: overview' });
     const mern = within(map).getByText('MERN').closest('li')!;
     const mean = within(map).getByText('MEAN').closest('li')!;
-    // Alice holds both grants, so she appears under both departments.
+    // Aarav holds both grants, so he appears under both departments.
     expect(within(mern).getByText('aarav.mehta@')).toBeInTheDocument();
     expect(within(mean).getByText('aarav.mehta@')).toBeInTheDocument();
     expect(within(mern).queryByText('sofia.rossi@')).not.toBeInTheDocument();
