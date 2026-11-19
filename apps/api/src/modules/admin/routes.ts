@@ -47,6 +47,12 @@ const userListQuery = z.strictObject({
     .transform(() => true)
     .optional(),
   q: z.string().trim().max(100).optional(),
+  role: z.enum(['USER', 'AUTHOR', 'REVIEWER', 'ADMIN']).optional(),
+  active: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  clientId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: stringIdCursor.optional(),
 });

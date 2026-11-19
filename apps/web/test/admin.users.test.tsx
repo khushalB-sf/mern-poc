@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
@@ -157,7 +157,7 @@ describe('admin users page', () => {
   it("on your own row the account can't be deactivated or deleted", async () => {
     mockApi(handlers);
     renderApp('/admin/users');
-    await screen.findByRole('table');
+    await screen.findByRole('table', { name: /Users, their role/ });
     expect(screen.queryByRole('button', { name: 'Delete Ada Admin' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Delete Alice Author' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Edit Ada Admin' }));
@@ -268,10 +268,44 @@ describe('admin users page', () => {
     expect(result.violations.map((v) => v.id)).toEqual([]);
   });
 
+  it('filters by role, status and department on the server, and clears them again', async () => {
+    const calls = mockApi(handlers);
+    renderApp('/admin/users');
+    await screen.findByRole('table', { name: /Users, their role/ });
+    const lastUsersCall = () =>
+      calls.filter((c) => c.method === 'GET' && c.path.startsWith('/api/admin/users')).at(-1)!.path;
+
+    await userEvent.selectOptions(screen.getByLabelText('Role'), 'REVIEWER');
+    await waitFor(() => expect(lastUsersCall()).toContain('role=REVIEWER'));
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'false');
+    await waitFor(() => expect(lastUsersCall()).toContain('active=false'));
+    await userEvent.selectOptions(screen.getByLabelText('Department'), 'c1');
+    await waitFor(() => expect(lastUsersCall()).toContain('clientId=c1'));
+    await waitFor(() => expect(lastUsersCall()).toContain('role=REVIEWER'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(lastUsersCall()).toBe('/api/admin/users'));
+    expect(screen.getByLabelText('Role')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('shows each account as Active or Deactivated, and a message when a filter matches nobody', async () => {
+    mockApi({
+      ...handlers,
+      'GET /api/admin/users': {
+        body: { items: [rows[0], { ...rows[2], active: false }] },
+      },
+    });
+    renderApp('/admin/users');
+    const table = await screen.findByRole('table', { name: /Users, their role/ });
+    expect(within(table).getByText('Active')).toBeInTheDocument();
+    expect(within(table).getByText('Deactivated')).toBeInTheDocument();
+  });
+
   it('has no axe violations', async () => {
     mockApi(handlers);
     const { container } = renderApp('/admin/users');
-    await screen.findByRole('table');
+    await screen.findByRole('table', { name: /Users, their role/ });
     const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(result.violations.map((v) => v.id)).toEqual([]);
   });

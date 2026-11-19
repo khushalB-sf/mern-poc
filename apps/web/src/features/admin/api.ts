@@ -21,8 +21,19 @@ const listQuery = (params: Record<string, string | undefined>) => {
   return q ? `?${q}` : '';
 };
 
-export const listAdminUsers = (q: string, cursor: string | undefined, signal?: AbortSignal) =>
-  apiFetch<Page<AdminUser>>(`/admin/users${listQuery({ q, cursor })}`, { signal });
+export interface UserFilters {
+  q: string;
+  /** '' = any role */
+  role: Role | '';
+  /** '' = any status */
+  active: 'true' | 'false' | '';
+  /** A department id, '' = any */
+  clientId: string;
+}
+export const NO_USER_FILTERS: UserFilters = { q: '', role: '', active: '', clientId: '' };
+
+export const listAdminUsers = (f: UserFilters, cursor: string | undefined, signal?: AbortSignal) =>
+  apiFetch<Page<AdminUser>>(`/admin/users${listQuery({ ...f, cursor })}`, { signal });
 
 export interface NewUser {
   name: string;

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { STATUS_LABEL, plural } from '../../shared/lib/format';
-import { Button, buttonClass } from '../../shared/ui/Button';
+import { Button } from '../../shared/ui/Button';
+import { AddLink } from '../../shared/ui/DataTable';
 import { Icon } from '../../shared/ui/Icon';
 import { Page, PageHeader } from '../../shared/ui/Page';
 import { cx } from '../../shared/ui/cx';
@@ -128,15 +129,7 @@ export function QuestionListPage() {
         title="Questions"
         description="Search and filter your team's interview questions."
         headingRef={headingRef}
-        actions={
-          me &&
-          canCreate(me) && (
-            <Link to="/questions/new" className={buttonClass('primary')}>
-              <Icon name="plus" />
-              Add question
-            </Link>
-          )
-        }
+        actions={me && canCreate(me) && <AddLink to="/questions/new">Add question</AddLink>}
       />
 
       <form role="search" onSubmit={(e) => e.preventDefault()} className="flex gap-2">
@@ -212,9 +205,7 @@ export function QuestionListPage() {
                       Clear search and filters
                     </Button>
                   ) : me && canCreate(me) ? (
-                    <Link to="/questions/new" className={buttonClass('primary')}>
-                      Add the first question
-                    </Link>
+                    <AddLink to="/questions/new">Add the first question</AddLink>
                   ) : undefined
                 }
               >

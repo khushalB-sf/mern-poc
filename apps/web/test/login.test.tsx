@@ -107,7 +107,7 @@ describe('login', () => {
     await userEvent.click(await screen.findByText('Demo accounts'));
     await userEvent.click(screen.getByRole('button', { name: /Reviewer for MERN and MEAN/ }));
     await waitFor(() =>
-      expect(screen.getByLabelText('Email')).toHaveValue('reviewer.web@example.com'),
+      expect(screen.getByLabelText('Email')).toHaveValue('rohan.verma@mailinator.com'),
     );
     expect(screen.getByLabelText('Password')).toHaveValue('Passw0rd!demo');
   });

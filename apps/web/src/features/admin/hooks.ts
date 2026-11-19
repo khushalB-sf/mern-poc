@@ -28,9 +28,11 @@ import {
   setUserClients,
   updateDepartment,
   updateUser,
+  NO_USER_FILTERS,
   type AuditFilters,
   type DepartmentInput,
   type NewUser,
+  type UserFilters,
   type UserPatch,
 } from './api';
 
@@ -39,10 +41,10 @@ const cursorPaging = {
   getNextPageParam: (last: { nextCursor: string | null }) => last.nextCursor ?? undefined,
 };
 
-export const useAdminUsers = (q = '') =>
+export const useAdminUsers = (filters: UserFilters = NO_USER_FILTERS) =>
   useInfiniteQuery({
-    queryKey: ['admin', 'users', q],
-    queryFn: ({ pageParam, signal }) => listAdminUsers(q, pageParam, signal),
+    queryKey: ['admin', 'users', filters],
+    queryFn: ({ pageParam, signal }) => listAdminUsers(filters, pageParam, signal),
     ...cursorPaging,
   });
 

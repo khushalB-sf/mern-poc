@@ -18,7 +18,7 @@ const search = async (page: Page, text: string) => {
 
 test.describe('signing in', () => {
   test('a wrong password is refused and the right one gets in', async ({ page }) => {
-    await signIn(page, 'user@example.com', 'not-the-password');
+    await signIn(page, 'noah.fischer@mailinator.com', 'not-the-password');
     await expect(page.getByRole('alert')).toContainText('incorrect');
     await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
@@ -28,7 +28,7 @@ test.describe('signing in', () => {
   test('every page needs a session, and signing out ends it', async ({ page }) => {
     await page.goto('/admin/users');
     await expect(page).toHaveURL(/\/login/);
-    await signIn(page, 'user@example.com');
+    await signIn(page, 'noah.fischer@mailinator.com');
     await signedIn(page);
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/login/);
@@ -42,13 +42,13 @@ test.describe('who sees what', () => {
   test('a department-restricted question is found only by people granted that department', async ({
     page,
   }) => {
-    await signIn(page, 'user.mern@example.com');
+    await signIn(page, 'emma.brooks@mailinator.com');
     await signedIn(page);
     await search(page, 'zebrafish');
     await expect(page.getByRole('link', { name: /zebrafish/i })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out' }).click();
 
-    for (const email of ['user.python@example.com', 'user@example.com']) {
+    for (const email of ['lucas.meyer@mailinator.com', 'noah.fischer@mailinator.com']) {
       await signIn(page, email);
       await signedIn(page);
       await search(page, 'zebrafish');
@@ -61,7 +61,7 @@ test.describe('who sees what', () => {
   test('a read-only user has no way to add questions and is turned away from admin pages', async ({
     page,
   }) => {
-    await signIn(page, 'user@example.com');
+    await signIn(page, 'noah.fischer@mailinator.com');
     await signedIn(page);
     await expect(page.getByRole('link', { name: 'Add question' })).toHaveCount(0);
     await page.goto('/admin/users');
@@ -75,7 +75,7 @@ test.describe('the review workflow', () => {
   }) => {
     const text = `What does the event loop do in Node ${Date.now()}?`;
 
-    await signIn(page, 'author.all@example.com');
+    await signIn(page, 'isabella.nguyen@mailinator.com');
     await signedIn(page);
     await page.goto('/questions/new');
     await page.getByLabel('Question', { exact: true }).fill(text);
@@ -85,13 +85,13 @@ test.describe('the review workflow', () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
 
     // not visible to a plain user while it waits
-    await signIn(page, 'user@example.com');
+    await signIn(page, 'noah.fischer@mailinator.com');
     await signedIn(page);
     await search(page, text.slice(0, 30));
     await expect(page.getByRole('link', { name: text })).toHaveCount(0);
     await page.getByRole('button', { name: 'Sign out' }).click();
 
-    await signIn(page, 'reviewer.all@example.com');
+    await signIn(page, 'hannah.schmidt@mailinator.com');
     await signedIn(page);
     await search(page, text.slice(0, 30));
     await page.getByRole('link', { name: text }).click();
@@ -99,7 +99,7 @@ test.describe('the review workflow', () => {
     await expect(page.getByText(/approved/i).first()).toBeVisible();
     await page.getByRole('button', { name: 'Sign out' }).click();
 
-    await signIn(page, 'user@example.com');
+    await signIn(page, 'noah.fischer@mailinator.com');
     await signedIn(page);
     await search(page, text.slice(0, 30));
     await expect(page.getByRole('link', { name: text })).toBeVisible();
@@ -110,7 +110,7 @@ test.describe('keyboard', () => {
   test('a filter dropdown opens with the arrow key and picks an option with the space bar', async ({
     page,
   }) => {
-    await signIn(page, 'admin@example.com');
+    await signIn(page, 'priya.sharma@mailinator.com');
     await signedIn(page);
     await page.goto('/');
     const dropdown = page.locator('details', {
@@ -157,13 +157,14 @@ test.describe('accessibility in a real browser (axe, incl. colour contrast)', ()
     await page.goto('/login');
     expect(await scan(page)).toEqual([]);
 
-    await signIn(page, 'admin@example.com');
+    await signIn(page, 'priya.sharma@mailinator.com');
     await signedIn(page);
     for (const path of [
       '/',
       '/questions/new',
       '/admin/users',
       '/admin/departments',
+      '/admin/tags',
       '/admin/audit',
       '/how-it-works',
       '/how-it-works#path',
@@ -173,5 +174,53 @@ test.describe('accessibility in a real browser (axe, incl. colour contrast)', ()
       await page.waitForLoadState('networkidle');
       expect(await scan(page), path).toEqual([]);
     }
+  });
+});
+
+test.describe('admin lists share one pattern', () => {
+  test('Users, Departments and Tags each have an Add button, a search box, filters and a table', async ({
+    page,
+  }) => {
+    await signIn(page, 'priya.sharma@mailinator.com');
+    await signedIn(page);
+    for (const [path, add, search] of [
+      ['/admin/users', 'Add user', 'Search users'],
+      ['/admin/departments', 'Add department', 'Search departments'],
+      ['/admin/tags', 'Add tag', 'Search tags'],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole('button', { name: add })).toBeVisible();
+      await expect(page.getByRole('searchbox', { name: search })).toBeVisible();
+      await expect(page.getByRole('table').first()).toBeVisible();
+    }
+  });
+
+  test('the Users role filter narrows the table, and Clear filters restores it', async ({
+    page,
+  }) => {
+    await signIn(page, 'priya.sharma@mailinator.com');
+    await signedIn(page);
+    await page.goto('/admin/users');
+    const rows = page.getByRole('table').first().getByRole('row');
+    await expect(rows.nth(2)).toBeVisible();
+    const all = await rows.count();
+    await page.getByLabel('Role', { exact: true }).selectOption('REVIEWER');
+    await expect(page.getByText('2 users')).toBeVisible(); // the seed has two reviewers
+    await expect(rows).toHaveCount(3); // header + two
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(rows).toHaveCount(all);
+  });
+
+  test('Add tag opens a dialog and the new tag shows up in the table', async ({ page }) => {
+    await signIn(page, 'priya.sharma@mailinator.com');
+    await signedIn(page);
+    await page.goto('/admin/tags');
+    await page.getByRole('button', { name: 'Add tag' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add tag' });
+    await dialog.getByLabel('List').selectOption({ label: 'Seniority level' });
+    const name = `Principal ${Date.now()}`;
+    await dialog.getByLabel('Name').fill(name);
+    await dialog.getByRole('button', { name: 'Add tag' }).click();
+    await expect(page.getByRole('rowheader', { name })).toBeVisible();
   });
 });

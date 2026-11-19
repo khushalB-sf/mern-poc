@@ -46,7 +46,7 @@ describe('"Other" technologies on the Departments page', () => {
       'GET /api/admin/technologies/other': { body: { active: [], archived: [] } },
     });
     renderApp('/admin/departments');
-    await screen.findByRole('list', { name: 'Departments' });
+    await screen.findByRole('table', { name: /Departments, their description/ });
     expect(screen.queryByRole('heading', { name: 'Other technologies' })).toBeNull();
   });
 

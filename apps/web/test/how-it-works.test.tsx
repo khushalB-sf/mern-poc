@@ -161,10 +161,10 @@ describe('how it works page', () => {
     const mern = within(map).getByText('MERN').closest('li')!;
     const mean = within(map).getByText('MEAN').closest('li')!;
     // Alice holds both grants, so she appears under both departments.
-    expect(within(mern).getByText('author.mern@')).toBeInTheDocument();
-    expect(within(mean).getByText('author.mern@')).toBeInTheDocument();
-    expect(within(mern).queryByText('author.python@')).not.toBeInTheDocument();
-    expect(within(map).getByText('author.none@')).toBeInTheDocument();
+    expect(within(mern).getByText('aarav.mehta@')).toBeInTheDocument();
+    expect(within(mean).getByText('aarav.mehta@')).toBeInTheDocument();
+    expect(within(mern).queryByText('sofia.rossi@')).not.toBeInTheDocument();
+    expect(within(map).getByText('chloe.martin@')).toBeInTheDocument();
 
     for (const label of TAB_LABELS) {
       await userEvent.click(screen.getByRole('tab', { name: label }));

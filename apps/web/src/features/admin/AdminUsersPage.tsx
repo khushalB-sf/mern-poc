@@ -1,17 +1,32 @@
 import { useState } from 'react';
+import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
+import { plural } from '../../shared/lib/format';
 import { ApiError } from '../../shared/api/client';
 import type { AdminUser, Role } from '../../shared/api/types';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { ROLE_LABEL } from '../../shared/lib/format';
 import { Button } from '../../shared/ui/Button';
-import { Icon } from '../../shared/ui/Icon';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog';
 import { EmptyState, ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
 import { useMe } from '../auth/hooks';
 import { Avatar } from '../../shared/ui/Avatar';
-import { Page, PageHeader } from '../../shared/ui/Page';
 import {
+  AddButton,
+  CELL,
+  ClearFilters,
+  DataTable,
+  FilterSelect,
+  ROW,
+  RowActions,
+  SearchField,
+  StatusBadge,
+  Toolbar,
+} from '../../shared/ui/DataTable';
+import { Page, PageHeader } from '../../shared/ui/Page';
+import { NO_USER_FILTERS, type UserFilters } from './api';
+import {
+  useAdminDepartments,
   useAdminUsers,
   useChangeRole,
   useDeleteUser,
@@ -34,48 +49,60 @@ function DeletedUsers() {
       <h2 id="deleted-users" className="font-serif text-xl font-semibold">
         Deleted users
       </h2>
-      <p className="mt-1 text-sm text-ink-soft">
+      <p className="mb-3 mt-1 text-sm text-ink-soft">
         They cannot sign in, and their questions and history are kept. A restored account comes back
         switched off: edit it and tick Active when you want them back in.
       </p>
       {restore.isError && (
-        <p role="alert" className="mt-3 text-sm font-medium text-danger">
+        <p role="alert" className="mb-3 text-sm font-medium text-danger">
           {message(restore.error)}
         </p>
       )}
-      <ul
-        aria-label="Deleted users"
-        className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
+      <DataTable
+        caption="Deleted users"
+        columns={['User', 'Role', { label: 'Actions', srOnly: true }]}
       >
         {gone.map((u) => (
-          <li key={u.id} className="flex items-center justify-between gap-3 p-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <Avatar name={u.name} />
-              <div className="min-w-0">
-                <p className="font-medium">{u.name}</p>
-                <p className="text-sm text-ink-soft">
-                  {u.email} · {ROLE_LABEL[u.role]}
-                </p>
+          <tr key={u.id} className={ROW}>
+            <th scope="row" className={`${CELL} text-left font-normal`}>
+              <div className="flex items-center gap-3">
+                <Avatar name={u.name} />
+                <div className="min-w-0">
+                  <span className="block font-medium">{u.name}</span>
+                  <span className="text-ink-soft">{u.email}</span>
+                </div>
               </div>
-            </div>
-            <Button
-              size="sm"
-              aria-label={`Restore ${u.name}`}
-              loading={restore.isPending && restore.variables === u.id}
-              onClick={() =>
-                restore.mutate(u.id, {
-                  onSuccess: () =>
-                    toast(
-                      `Restored ${u.name}. Their account is switched off until you activate it.`,
-                    ),
-                })
-              }
-            >
-              Restore
-            </Button>
-          </li>
+            </th>
+            <td className={CELL}>{ROLE_LABEL[u.role]}</td>
+            <td className={CELL}>
+              <RowActions>
+                <Button
+                  size="sm"
+                  aria-label={`Restore ${u.name}`}
+                  loading={restore.isPending && restore.variables === u.id}
+                  onClick={() =>
+                    restore.mutate(u.id, {
+                      onSuccess: () =>
+                        toast(
+                          `Restored ${u.name}. Their account is switched off until you activate it.`,
+                        ),
+                    })
+                  }
+                >
+                  Restore
+                </Button>
+              </RowActions>
+            </td>
+          </tr>
         ))}
-      </ul>
+      </DataTable>
+      {deleted.hasNextPage && (
+        <div className="mt-4 text-center">
+          <Button loading={deleted.isFetchingNextPage} onClick={() => void deleted.fetchNextPage()}>
+            Load more
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -83,10 +110,13 @@ function DeletedUsers() {
 export function AdminUsersPage() {
   useDocumentTitle('Users');
   const { data: me } = useMe();
-  // What is typed, and what has been searched for (the list changes on Enter, not on every key).
   const [typed, setTyped] = useState('');
-  const [search, setSearch] = useState('');
-  const users = useAdminUsers(search);
+  const [filters, setFilters] = useState<UserFilters>(NO_USER_FILTERS);
+  // The list follows the box as you type, after a short pause.
+  const q = useDebouncedValue(typed.trim(), 300);
+  const applied = { ...filters, q };
+  const users = useAdminUsers(applied);
+  const departments = useAdminDepartments();
   const rows = users.data?.pages.flatMap((p) => p.items) ?? [];
   const changeRole = useChangeRole();
   const toast = useToast();
@@ -94,6 +124,12 @@ export function AdminUsersPage() {
   // undefined = closed, null = add a user, a user = edit that user.
   const [editing, setEditing] = useState<AdminUser | null | undefined>(undefined);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const filtered =
+    q !== '' || filters.role !== '' || filters.active !== '' || filters.clientId !== '';
+  const clear = () => {
+    setTyped('');
+    setFilters(NO_USER_FILTERS);
+  };
 
   const onRole = (u: AdminUser, role: Role) =>
     changeRole.mutate(
@@ -109,35 +145,56 @@ export function AdminUsersPage() {
       <PageHeader
         title="Users"
         description="Add people, change what each can do and which departments they can see, or remove them."
-        actions={
-          <Button variant="primary" onClick={() => setEditing(null)}>
-            <Icon name="plus" />
-            Add user
-          </Button>
-        }
+        actions={<AddButton onClick={() => setEditing(null)}>Add user</AddButton>}
       />
 
-      <form
-        role="search"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSearch(typed.trim());
-        }}
-        className="mb-4"
+      <Toolbar
+        summary={
+          users.isSuccess &&
+          `${plural(rows.length, 'user')}${users.hasNextPage ? ' so far, more below' : ''}`
+        }
       >
-        <label htmlFor="user-search" className="sr-only">
-          Search users
-        </label>
-        <input
-          id="user-search"
-          type="search"
+        <SearchField
+          label="Search users"
           value={typed}
-          onChange={(e) => setTyped(e.target.value)}
+          onChange={setTyped}
           placeholder="Search by name or email"
-          maxLength={100}
-          className="min-h-11 w-full max-w-sm rounded-lg border border-control bg-surface px-3 shadow-sm focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0"
         />
-      </form>
+        <FilterSelect
+          label="Role"
+          value={filters.role}
+          onChange={(v) => setFilters({ ...filters, role: v as Role | '' })}
+        >
+          <option value="">All roles</option>
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect
+          label="Status"
+          value={filters.active}
+          onChange={(v) => setFilters({ ...filters, active: v as UserFilters['active'] })}
+        >
+          <option value="">Any status</option>
+          <option value="true">Active</option>
+          <option value="false">Deactivated</option>
+        </FilterSelect>
+        <FilterSelect
+          label="Department"
+          value={filters.clientId}
+          onChange={(v) => setFilters({ ...filters, clientId: v })}
+        >
+          <option value="">All departments</option>
+          {departments.data?.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </FilterSelect>
+        {filtered && <ClearFilters onClick={clear} />}
+      </Toolbar>
 
       {users.isPending ? (
         <PageSpinner label="Loading users" />
@@ -146,100 +203,91 @@ export function AdminUsersPage() {
           {users.error.message}
         </ErrorState>
       ) : rows.length === 0 ? (
-        <EmptyState title={search ? 'No users match' : 'No users yet'}>
-          {search ? 'Try a different name or email.' : undefined}
+        <EmptyState
+          title={filtered ? 'No users match' : 'No users yet'}
+          action={filtered ? <ClearFilters onClick={clear} /> : undefined}
+        >
+          {filtered ? 'Try a different name, role, status or department.' : undefined}
         </EmptyState>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-          <table className="w-full text-sm">
-            <caption className="sr-only">Users, their role and departments</caption>
-            <thead>
-              <tr className="border-b border-line bg-surface-2 text-left text-xs uppercase tracking-wider text-ink-soft">
-                <th scope="col" className="px-4 py-3 font-semibold">
-                  User
+        <DataTable
+          caption="Users, their role, departments and status"
+          columns={['User', 'Role', 'Departments', 'Status', { label: 'Actions', srOnly: true }]}
+        >
+          {rows.map((u) => {
+            const self = u.id === me?.id;
+            return (
+              <tr key={u.id} className={ROW}>
+                <th scope="row" className={`${CELL} text-left font-normal`}>
+                  <div className="flex items-center gap-3">
+                    <Avatar name={u.name} />
+                    <div className="min-w-0">
+                      <span className="block font-medium">{u.name}</span>
+                      <span className="text-ink-soft">{u.email}</span>
+                    </div>
+                  </div>
                 </th>
-                <th scope="col" className="px-4 py-3 font-semibold">
-                  Role
-                </th>
-                <th scope="col" className="px-4 py-3 font-semibold">
-                  Departments
-                </th>
-                <th scope="col" className="px-4 py-3 font-semibold">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((u) => {
-                const self = u.id === me?.id;
-                return (
-                  <tr key={u.id} className="border-b border-line align-top last:border-b-0">
-                    <th scope="row" className="px-4 py-3 text-left font-normal">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={u.name} />
-                        <div className="min-w-0">
-                          <span className="block font-medium">{u.name}</span>
-                          <span className="text-ink-soft">{u.email}</span>
-                        </div>
-                      </div>
-                    </th>
-                    <td className="px-4 py-3">
-                      <select
-                        aria-label={`Role for ${u.name}`}
-                        value={u.role}
-                        disabled={self || changeRole.isPending}
-                        aria-describedby={self ? 'self-role-hint' : undefined}
-                        onChange={(e) => onRole(u, e.target.value as Role)}
-                        className="min-h-10 rounded-lg border border-control bg-surface px-2 hover:border-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+                <td className={CELL}>
+                  <select
+                    aria-label={`Role for ${u.name}`}
+                    value={u.role}
+                    disabled={self || changeRole.isPending}
+                    aria-describedby={self ? 'self-role-hint' : undefined}
+                    onChange={(e) => onRole(u, e.target.value as Role)}
+                    className="min-h-10 rounded-lg border border-control bg-surface px-2 hover:border-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABEL[r]}
+                      </option>
+                    ))}
+                  </select>
+                  {self && (
+                    <p id="self-role-hint" className="mt-1 text-xs text-ink-soft">
+                      You can't change your own role.
+                    </p>
+                  )}
+                </td>
+                <td className={CELL}>
+                  {u.role === 'ADMIN' ? (
+                    <span className="text-ink-soft">All departments</span>
+                  ) : (
+                    u.clients.map((c) => c.name).join(', ') || 'None'
+                  )}
+                </td>
+                <td className={CELL}>
+                  {u.active ? (
+                    <StatusBadge tone="ok">Active</StatusBadge>
+                  ) : (
+                    <StatusBadge tone="danger">Deactivated</StatusBadge>
+                  )}
+                </td>
+                <td className={CELL}>
+                  <RowActions>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Edit ${u.name}`}
+                      onClick={() => setEditing(u)}
+                    >
+                      Edit
+                    </Button>
+                    {!self && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Delete ${u.name}`}
+                        onClick={() => setDeleting(u)}
                       >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {ROLE_LABEL[r]}
-                          </option>
-                        ))}
-                      </select>
-                      {self && (
-                        <p id="self-role-hint" className="mt-1 text-xs text-ink-soft">
-                          You can't change your own role.
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {u.role === 'ADMIN' ? (
-                        <p className="text-ink-soft">All departments</p>
-                      ) : (
-                        <p>{u.clients.map((c) => c.name).join(', ') || 'None'}</p>
-                      )}
-                      {!u.active && <p className="mt-1 text-xs text-danger">Deactivated</p>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Edit ${u.name}`}
-                          onClick={() => setEditing(u)}
-                        >
-                          Edit
-                        </Button>
-                        {!self && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Delete ${u.name}`}
-                            onClick={() => setDeleting(u)}
-                          >
-                            Delete
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                        Delete
+                      </Button>
+                    )}
+                  </RowActions>
+                </td>
+              </tr>
+            );
+          })}
+        </DataTable>
       )}
       {users.hasNextPage && (
         <div className="mt-4 text-center">

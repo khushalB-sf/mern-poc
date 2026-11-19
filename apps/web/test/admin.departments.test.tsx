@@ -18,22 +18,64 @@ const handlers = {
   },
 };
 
+/** The same Add button as every admin page: it opens a dialog. */
+async function openAdd() {
+  await userEvent.click(await screen.findByRole('button', { name: 'Add department' }));
+  return screen.findByRole('dialog', { name: 'Add department' });
+}
+
 describe('admin departments page', () => {
   it('blocks non-admins', async () => {
     mockApi(baseHandlers);
     renderApp('/admin/departments');
     expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'New department' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add department' })).toBeNull();
   });
 
   it('lists departments with user counts', async () => {
     mockApi(handlers);
     renderApp('/admin/departments');
-    const list = await screen.findByRole('list', { name: 'Departments' });
-    expect(list).toHaveTextContent('Acme');
-    expect(list).toHaveTextContent('3 users');
-    expect(list).toHaveTextContent('1 user');
-    expect(list).toHaveTextContent('Key account');
+    const table = await screen.findByRole('table', { name: /Departments, their description/ });
+    const acme = within(table).getByRole('row', { name: /Acme/ });
+    expect(within(acme).getByText('Key account')).toBeInTheDocument();
+    expect(within(acme).getByRole('cell', { name: '3' })).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: /Globex/ })).toHaveTextContent('1');
+    expect(screen.getByText('2 departments')).toBeInTheDocument();
+  });
+
+  it('searches by name or description, and filters by whether anyone has access', async () => {
+    mockApi({
+      ...handlers,
+      'GET /api/admin/clients': {
+        body: {
+          items: [
+            { id: 'c1', name: 'Acme', description: 'Key account', userCount: 3 },
+            { id: 'c2', name: 'Globex', description: null, userCount: 1 },
+            { id: 'c3', name: 'Initech', description: 'TPS reports', userCount: 0 },
+          ],
+        },
+      },
+    });
+    renderApp('/admin/departments');
+    const table = await screen.findByRole('table', { name: /Departments, their description/ });
+    const rowsOf = () => within(table).getAllByRole('row').length - 1;
+    expect(rowsOf()).toBe(3);
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search departments' }), 'tps');
+    expect(rowsOf()).toBe(1); // matches Initech's description
+    expect(screen.getByText('1 of 3 departments')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(rowsOf()).toBe(3);
+
+    await userEvent.selectOptions(screen.getByLabelText('Users'), 'none');
+    expect(within(table).getByRole('row', { name: /Initech/ })).toBeInTheDocument();
+    expect(rowsOf()).toBe(1);
+    await userEvent.selectOptions(screen.getByLabelText('Users'), 'with');
+    expect(rowsOf()).toBe(2);
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search departments' }), 'zzz');
+    expect(await screen.findByText('No departments match')).toBeInTheDocument();
   });
 
   it('adds a department with an optional description (blank is sent as null)', async () => {
@@ -45,9 +87,10 @@ describe('admin departments page', () => {
       },
     });
     renderApp('/admin/departments');
-    await userEvent.type(await screen.findByLabelText('New department'), 'Initech');
-    await userEvent.type(screen.getByLabelText('Description (optional)'), '  TPS  ');
-    await userEvent.click(screen.getByRole('button', { name: 'Add department' }));
+    const dialog = await openAdd();
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Initech');
+    await userEvent.type(within(dialog).getByLabelText('Description'), '  TPS  ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add department' }));
     await screen.findByText('Added department Initech');
     expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
       name: 'Initech',
@@ -58,10 +101,11 @@ describe('admin departments page', () => {
   it('rejects a description over 500 characters without a request', async () => {
     const calls = mockApi(handlers);
     renderApp('/admin/departments');
-    await userEvent.type(await screen.findByLabelText('New department'), 'Initech');
-    await userEvent.click(screen.getByLabelText('Description (optional)'));
+    const dialog = await openAdd();
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Initech');
+    await userEvent.click(within(dialog).getByLabelText('Description'));
     await userEvent.paste('x'.repeat(501));
-    await userEvent.click(screen.getByRole('button', { name: 'Add department' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add department' }));
     expect(await screen.findByText('Use 500 characters or fewer')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
@@ -131,11 +175,11 @@ describe('admin departments page', () => {
       },
     });
     renderApp('/admin/departments');
-    await userEvent.type(await screen.findByLabelText('New department'), '  Initech  ');
-    await userEvent.click(screen.getByRole('button', { name: 'Add department' }));
+    const dialog = await openAdd();
+    await userEvent.type(within(dialog).getByLabelText('Name'), '  Initech  ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add department' }));
     expect(await screen.findByText('Added department Initech')).toBeInTheDocument();
     expect(calls.find((c) => c.method === 'POST')).toMatchObject({ body: { name: 'Initech' } });
-    expect(screen.getByLabelText('New department')).toHaveValue('');
   });
 
   it('shows a field error on a duplicate name (409)', async () => {
@@ -147,19 +191,21 @@ describe('admin departments page', () => {
       },
     });
     renderApp('/admin/departments');
-    await userEvent.type(await screen.findByLabelText('New department'), 'Acme');
-    await userEvent.click(screen.getByRole('button', { name: 'Add department' }));
+    const dialog = await openAdd();
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Acme');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add department' }));
     expect(
-      await screen.findByText('A department with this name already exists'),
+      await within(dialog).findByText('A department with this name already exists'),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('New department')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('blocks a blank name without a request', async () => {
     const calls = mockApi(handlers);
     renderApp('/admin/departments');
-    await userEvent.type(await screen.findByLabelText('New department'), '   ');
-    await userEvent.click(screen.getByRole('button', { name: 'Add department' }));
+    const dialog = await openAdd();
+    await userEvent.type(within(dialog).getByLabelText('Name'), '   ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add department' }));
     expect(await screen.findByText('Enter a department name')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
@@ -167,7 +213,7 @@ describe('admin departments page', () => {
   it('has no axe violations', async () => {
     mockApi(handlers);
     const { container } = renderApp('/admin/departments');
-    await screen.findByRole('list', { name: 'Departments' });
+    await screen.findByRole('table', { name: /Departments, their description/ });
     const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(result.violations.map((v) => v.id)).toEqual([]);
   });

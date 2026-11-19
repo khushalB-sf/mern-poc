@@ -36,6 +36,34 @@ export const adminPaths = {
           required: false,
           schema: { type: 'string', enum: ['true'] },
         },
+        { name: 'q', in: 'query', required: false, schema: { type: 'string', maxLength: 100 } },
+        {
+          name: 'role',
+          in: 'query',
+          required: false,
+          schema: { enum: ['USER', 'AUTHOR', 'REVIEWER', 'ADMIN'] },
+        },
+        {
+          name: 'active',
+          in: 'query',
+          required: false,
+          description: 'Only active (`true`) or only deactivated (`false`) accounts',
+          schema: { type: 'string', enum: ['true', 'false'] },
+        },
+        {
+          name: 'clientId',
+          in: 'query',
+          required: false,
+          description: 'Only people granted this department',
+          schema: { type: 'string', format: 'uuid' },
+        },
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer', minimum: 1, maximum: 100 },
+        },
+        { name: 'cursor', in: 'query', required: false, schema: { type: 'string' } },
       ],
       responses: {
         200: {

@@ -169,7 +169,7 @@ describe('XSS: hostile data is shown as text', () => {
   it('admin users page: names and department names', async () => {
     mockApi(adminHandlers);
     renderApp('/admin/users');
-    await screen.findByRole('table');
+    await screen.findByRole('table', { name: /Users, their role/ });
     expectNoInjectedMarkup();
   });
 

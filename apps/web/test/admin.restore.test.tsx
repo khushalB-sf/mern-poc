@@ -40,7 +40,7 @@ describe('restore: departments', () => {
       },
     });
     renderApp('/admin/departments');
-    const list = await screen.findByRole('list', { name: 'Deleted departments' });
+    const list = await screen.findByRole('table', { name: 'Deleted departments' });
     expect(list).toHaveTextContent('Initech');
     await userEvent.click(within(list).getByRole('button', { name: 'Restore Initech' }));
     expect(await screen.findByText('Restored department Initech')).toBeInTheDocument();

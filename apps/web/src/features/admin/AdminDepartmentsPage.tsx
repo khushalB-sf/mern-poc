@@ -14,6 +14,17 @@ import { EmptyState, ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
 import { DepartmentTechnologies } from './DepartmentTechnologies';
 import { OtherTechnologies } from './OtherTechnologies';
+import {
+  AddButton,
+  CELL,
+  ClearFilters,
+  DataTable,
+  FilterSelect,
+  ROW,
+  RowActions,
+  SearchField,
+  Toolbar,
+} from '../../shared/ui/DataTable';
 import { Page, PageHeader } from '../../shared/ui/Page';
 import {
   useAdminDepartments,
@@ -106,6 +117,57 @@ function EditDialog({ department, onClose }: { department: Department; onClose: 
   );
 }
 
+function AddDialog({ onClose }: { onClose: () => void }) {
+  const create = useCreateDepartment();
+  const toast = useToast();
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors },
+  } = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: '', description: '' },
+  });
+  return (
+    <Dialog open onClose={onClose} title="Add department">
+      <form
+        noValidate
+        onSubmit={handleSubmit((v) =>
+          create.mutate(clean(v), {
+            onSuccess: (d) => {
+              toast(`Added department ${d.name}`);
+              onClose();
+            },
+            onError: (e) => setServerError(setError, e),
+          }),
+        )}
+        className="space-y-4"
+      >
+        <TextField
+          label="Name"
+          autoComplete="off"
+          error={errors.name?.message}
+          {...register('name')}
+        />
+        <TextAreaField
+          label="Description"
+          hint="Optional. Say what the department covers."
+          rows={3}
+          error={errors.description?.message}
+          {...register('description')}
+        />
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={create.isPending}>
+            Add department
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 function DeletedDepartments() {
   const deleted = useDeletedDepartments();
   const restore = useRestoreDepartment();
@@ -116,7 +178,7 @@ function DeletedDepartments() {
       <h2 id="deleted-departments" className="font-serif text-xl font-semibold">
         Deleted departments
       </h2>
-      <p className="mt-1 text-sm text-ink-soft">
+      <p className="mb-3 mt-1 text-sm text-ink-soft">
         Their questions are hidden from everyone. Restoring a department brings them back exactly as
         they were.
       </p>
@@ -125,29 +187,35 @@ function DeletedDepartments() {
           {(restore.error as Error).message}
         </p>
       )}
-      <ul
-        aria-label="Deleted departments"
-        className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
+      <DataTable
+        caption="Deleted departments"
+        columns={['Department', 'Description', { label: 'Actions', srOnly: true }]}
       >
         {deleted.data.map((d) => (
-          <li key={d.id} className="flex items-center justify-between gap-3 p-4">
-            <div className="min-w-0">
-              <p className="font-medium">{d.name}</p>
-              {d.description && <p className="text-sm text-ink-soft">{d.description}</p>}
-            </div>
-            <Button
-              size="sm"
-              loading={restore.isPending && restore.variables === d.id}
-              aria-label={`Restore ${d.name}`}
-              onClick={() =>
-                restore.mutate(d.id, { onSuccess: () => toast(`Restored department ${d.name}`) })
-              }
-            >
-              Restore
-            </Button>
-          </li>
+          <tr key={d.id} className={ROW}>
+            <th scope="row" className={`${CELL} text-left font-medium`}>
+              {d.name}
+            </th>
+            <td className={`${CELL} text-ink-soft`}>{d.description ?? '—'}</td>
+            <td className={CELL}>
+              <RowActions>
+                <Button
+                  size="sm"
+                  loading={restore.isPending && restore.variables === d.id}
+                  aria-label={`Restore ${d.name}`}
+                  onClick={() =>
+                    restore.mutate(d.id, {
+                      onSuccess: () => toast(`Restored department ${d.name}`),
+                    })
+                  }
+                >
+                  Restore
+                </Button>
+              </RowActions>
+            </td>
+          </tr>
         ))}
-      </ul>
+      </DataTable>
     </section>
   );
 }
@@ -155,114 +223,116 @@ function DeletedDepartments() {
 export function AdminDepartmentsPage() {
   useDocumentTitle('Departments');
   const departments = useAdminDepartments();
-  const create = useCreateDepartment();
   const remove = useDeleteDepartment();
   const toast = useToast();
+  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Department | null>(null);
   const [deleting, setDeleting] = useState<Department | null>(null);
+  const [search, setSearch] = useState('');
+  const [users, setUsers] = useState<'' | 'with' | 'none'>('');
   const impact = useDepartmentImpact(deleting?.id ?? null);
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setError,
-    formState: { errors },
-  } = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: '', description: '' },
-  });
 
-  const onSubmit = (v: Values) =>
-    create.mutate(clean(v), {
-      onSuccess: (d) => {
-        toast(`Added department ${d.name}`);
-        reset();
-      },
-      onError: (e) => setServerError(setError, e),
-    });
+  const all = departments.data ?? [];
+  const needle = search.trim().toLowerCase();
+  const rows = all.filter(
+    (d) =>
+      (needle === '' ||
+        d.name.toLowerCase().includes(needle) ||
+        (d.description ?? '').toLowerCase().includes(needle)) &&
+      (users === '' || (users === 'with' ? d.userCount > 0 : d.userCount === 0)),
+  );
+  const filtered = needle !== '' || users !== '';
+  const clear = () => {
+    setSearch('');
+    setUsers('');
+  };
 
   return (
     <Page>
       <PageHeader
         title="Departments"
         description="Questions can be restricted to a department. Grant users access on the Users page."
+        actions={<AddButton onClick={() => setAdding(true)}>Add department</AddButton>}
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <form
-          noValidate
-          onSubmit={handleSubmit(onSubmit)}
-          className="space-y-4 rounded-xl border border-line bg-surface p-5 shadow-sm"
-        >
-          <TextField
-            label="New department"
-            autoComplete="off"
-            error={errors.name?.message}
-            {...register('name')}
-          />
-          <TextAreaField
-            label="Description (optional)"
-            rows={2}
-            error={errors.description?.message}
-            {...register('description')}
-          />
-          <Button type="submit" variant="primary" loading={create.isPending}>
-            Add department
-          </Button>
-        </form>
+      <Toolbar
+        summary={
+          departments.isSuccess &&
+          (filtered
+            ? `${rows.length} of ${plural(all.length, 'department')}`
+            : plural(all.length, 'department'))
+        }
+      >
+        <SearchField
+          label="Search departments"
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name or description"
+        />
+        <FilterSelect label="Users" value={users} onChange={(v) => setUsers(v as typeof users)}>
+          <option value="">Any number</option>
+          <option value="with">With users</option>
+          <option value="none">No users</option>
+        </FilterSelect>
+        {filtered && <ClearFilters onClick={clear} />}
+      </Toolbar>
 
-        <div className="min-w-0">
-          {departments.isPending ? (
-            <PageSpinner label="Loading departments" />
-          ) : departments.isError ? (
-            <ErrorState
-              title="Couldn't load departments"
-              onRetry={() => void departments.refetch()}
-            >
-              {departments.error.message}
-            </ErrorState>
-          ) : departments.data.length === 0 ? (
-            <EmptyState title="No departments yet">Add the first one above.</EmptyState>
-          ) : (
-            <ul
-              aria-label="Departments"
-              className="divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
-            >
-              {departments.data.map((d) => (
-                <li key={d.id} className="flex items-start justify-between gap-3 p-4">
-                  <div className="min-w-0">
-                    <p className="font-medium">{d.name}</p>
-                    {d.description && <p className="text-sm text-ink-soft">{d.description}</p>}
-                    <p className="text-sm text-ink-soft">{plural(d.userCount, 'user')}</p>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Edit ${d.name}`}
-                      onClick={() => setEditing(d)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Delete ${d.name}`}
-                      onClick={() => setDeleting(d)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+      {departments.isPending ? (
+        <PageSpinner label="Loading departments" />
+      ) : departments.isError ? (
+        <ErrorState title="Couldn't load departments" onRetry={() => void departments.refetch()}>
+          {departments.error.message}
+        </ErrorState>
+      ) : all.length === 0 ? (
+        <EmptyState title="No departments yet">
+          Use Add department to create the first one.
+        </EmptyState>
+      ) : rows.length === 0 ? (
+        <EmptyState title="No departments match" action={<ClearFilters onClick={clear} />}>
+          Try a different name, or clear the filters.
+        </EmptyState>
+      ) : (
+        <DataTable
+          caption="Departments, their description and number of users"
+          columns={['Department', 'Description', 'Users', { label: 'Actions', srOnly: true }]}
+        >
+          {rows.map((d) => (
+            <tr key={d.id} className={ROW}>
+              <th scope="row" className={`${CELL} text-left font-medium`}>
+                {d.name}
+              </th>
+              <td className={`${CELL} text-ink-soft`}>{d.description ?? '—'}</td>
+              <td className={CELL}>{d.userCount}</td>
+              <td className={CELL}>
+                <RowActions>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Edit ${d.name}`}
+                    onClick={() => setEditing(d)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Delete ${d.name}`}
+                    onClick={() => setDeleting(d)}
+                  >
+                    Delete
+                  </Button>
+                </RowActions>
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      )}
 
       {departments.data && <OtherTechnologies departments={departments.data} />}
 
       <DeletedDepartments />
+
+      {adding && <AddDialog onClose={() => setAdding(false)} />}
 
       {editing && <EditDialog department={editing} onClose={() => setEditing(null)} />}
 

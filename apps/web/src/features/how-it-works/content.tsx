@@ -613,7 +613,7 @@ export const TRACES: { who: string; request: string; path: string; result: strin
   },
 ];
 
-const short = (email: string) => email.replace('@example.com', '@');
+const short = (email: string) => email.replace('@mailinator.com', '@');
 const holders = (client: DemoClient) =>
   DEMO_ACCOUNTS.filter((a) => a.grants.includes(client)).map((a) => ({ text: short(a.email) }));
 

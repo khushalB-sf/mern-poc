@@ -53,6 +53,10 @@ const signOutEverywhere = (db: Queryable, userId: string) =>
 export interface UserListQuery {
   deleted?: boolean | undefined;
   q?: string | undefined;
+  role?: Role | undefined;
+  active?: boolean | undefined;
+  /** Only people granted this department. */
+  clientId?: string | undefined;
   limit: number;
   cursor?: [string, string] | undefined;
 }
@@ -60,11 +64,14 @@ export interface UserListQuery {
 /** In a LIKE pattern % and _ are wildcards; a search for them should find them, not everything. */
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-/** Users by name, paged by a (name, id) cursor, optionally filtered by a name or email fragment. */
+/** Users by name, paged by a (name, id) cursor, optionally filtered by a name or email fragment, role, status or department. */
 export async function listUsers(db: Db, f: UserListQuery = { limit: 50 }) {
   const rows = await db.appUser.findMany({
     where: {
       deletedAt: f.deleted ? { not: null } : null,
+      ...(f.role && { role: f.role }),
+      ...(f.active !== undefined && { active: f.active }),
+      ...(f.clientId && { grants: { some: { clientId: f.clientId } } }),
       ...(f.q && {
         OR: [
           { name: { contains: escapeLike(f.q), mode: 'insensitive' as const } },

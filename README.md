@@ -13,19 +13,21 @@ docker compose up -d --build         # database + API + web
 
 Open **http://localhost:3000** and sign in. The first start migrates the database and seeds about 1,500 questions.
 
-| Account                     | Role                                                     |
-| --------------------------- | -------------------------------------------------------- |
-| `admin@example.com`         | Admin, sees all questions, manages users and departments |
-| `author.mern@example.com`   | Author in MERN and MEAN                                  |
-| `author.python@example.com` | Author in Python and AI-ML                               |
-| `author.data@example.com`   | Author in Data Engineering and DevOps                    |
-| `author.all@example.com`    | Author in every department                               |
-| `author.none@example.com`   | Author, no department access                             |
-| `reviewer.web@example.com`  | Reviewer for MERN and MEAN                               |
-| `reviewer.all@example.com`  | Reviewer for every department                            |
-| `user.mern@example.com`     | Read-only user in MERN                                   |
-| `user.python@example.com`   | Read-only user in Python                                 |
-| `user@example.com`          | Read-only user, no department access                     |
+| Name            | Account                          | Role                                                     |
+| --------------- | -------------------------------- | -------------------------------------------------------- |
+| Priya Sharma    | `priya.sharma@mailinator.com`    | Admin, sees all questions, manages users and departments |
+| Aarav Mehta     | `aarav.mehta@mailinator.com`     | Author in MERN and MEAN                                  |
+| Sofia Rossi     | `sofia.rossi@mailinator.com`     | Author in Python and AI-ML                               |
+| Daniel Okafor   | `daniel.okafor@mailinator.com`   | Author in Data Engineering and DevOps                    |
+| Isabella Nguyen | `isabella.nguyen@mailinator.com` | Author in every department                               |
+| Chloe Martin    | `chloe.martin@mailinator.com`    | Author, no department access                             |
+| Rohan Verma     | `rohan.verma@mailinator.com`     | Reviewer for MERN and MEAN                               |
+| Hannah Schmidt  | `hannah.schmidt@mailinator.com`  | Reviewer for every department                            |
+| Emma Brooks     | `emma.brooks@mailinator.com`     | Read-only user in MERN                                   |
+| Lucas Meyer     | `lucas.meyer@mailinator.com`     | Read-only user in Python                                 |
+| Noah Fischer    | `noah.fischer@mailinator.com`    | Read-only user, no department access                     |
+
+The addresses are on [Mailinator](https://www.mailinator.com), a public inbox service, so they look real but anyone can read their mail. That is fine for demo data and wrong for real accounts. All demo users share `SEED_PASSWORD`.
 
 Departments: MERN, MEAN, Python, AI-ML, Data Engineering, DevOps. Each department's questions use only its own technologies (a MERN question never mentions Spark); about 15% of questions are global (behavioural and general engineering) and visible to everyone.
 
@@ -33,7 +35,7 @@ Password for all of them: `Passw0rd!demo` (the `SEED_PASSWORD` in `.env`). These
 
 The login page has a **Demo accounts** panel that fills in both the email **and the password** with one click. That password is compiled into the web bundle, so the panel is for local demos only: set `VITE_SHOW_DEMO_ACCOUNTS=false` for anything shared. The panel always uses the default `Passw0rd!demo`; if you change `SEED_PASSWORD`, the one-click fill will no longer log in (type the password instead). The `VITE_DEMO_PASSWORD` override that the code reads is not passed through `compose.yaml` or the web Dockerfile.
 
-Try the main guarantee: search `zebrafish` as `author.none@example.com` (no results, indistinguishable from a search that matches nothing), then as `author.mern@example.com` (one MERN-only question).
+Try the main guarantee: search `zebrafish` as `chloe.martin@mailinator.com` (no results, indistinguishable from a search that matches nothing), then as `aarav.mehta@mailinator.com` (one MERN-only question).
 
 ## Three ways to run it
 

@@ -208,7 +208,7 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
     addRow({ ...q, client: dept }, i);
   }
 
-  const reviewer = userByEmail.get('reviewer.all@example.com')!;
+  const reviewer = userByEmail.get('hannah.schmidt@mailinator.com')!;
   for (const [i, d] of REVIEW_DEMO.entries()) {
     addRow(
       {

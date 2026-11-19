@@ -41,7 +41,7 @@ describe('deleted users', () => {
       'POST /api/admin/users/u9/restore': { body: { user: { ...gone } } },
     });
     renderApp('/admin/users');
-    const list = await screen.findByRole('list', { name: 'Deleted users' });
+    const list = await screen.findByRole('table', { name: 'Deleted users' });
     expect(list).toHaveTextContent('Una User');
     expect(list).toHaveTextContent('una@x.dev');
     await userEvent.click(within(list).getByRole('button', { name: 'Restore Una User' }));
@@ -52,8 +52,8 @@ describe('deleted users', () => {
   it('shows nothing when nobody is deleted', async () => {
     mockApi({ ...base, 'GET /api/admin/users?deleted=true': { body: { items: [] } } });
     renderApp('/admin/users');
-    await screen.findByRole('table');
-    expect(screen.queryByRole('list', { name: 'Deleted users' })).toBeNull();
+    await screen.findByRole('table', { name: /Users, their role/ });
+    expect(screen.queryByRole('table', { name: 'Deleted users' })).toBeNull();
   });
 
   it('the delete confirmation says the account can be restored', async () => {
@@ -99,7 +99,7 @@ describe('deleted users', () => {
   it('has no axe violations', async () => {
     mockApi(base);
     const { container } = renderApp('/admin/users');
-    await screen.findByRole('list', { name: 'Deleted users' });
+    await screen.findByRole('table', { name: 'Deleted users' });
     expect((await axe.run(container)).violations).toEqual([]);
   });
 });

@@ -44,18 +44,60 @@ describe('admin tags (seniority, question type)', () => {
     expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument();
   });
 
-  it('lists each list with usage, and archived tags separately with Restore', async () => {
+  const tableOf = () => screen.findByRole('table', { name: /Tags, their list/ });
+  const addTag = async () => {
+    await userEvent.click(await screen.findByRole('button', { name: 'Add tag' }));
+    return screen.findByRole('dialog', { name: 'Add tag' });
+  };
+
+  it('lists the tags of every list in one table, with usage; archived ones are filtered out by default', async () => {
     mockApi(base);
     renderApp('/admin/tags');
-    const seniority = await screen.findByRole('list', { name: 'Seniority level' });
-    expect(seniority).toHaveTextContent('Junior');
-    expect(seniority).toHaveTextContent('3 questions');
-    expect(within(seniority).queryByText('Mid')).toBeNull();
-    expect(screen.getByRole('list', { name: 'Archived Seniority level' })).toHaveTextContent('Mid');
-    expect(screen.getByRole('list', { name: 'Question type' })).toHaveTextContent('Coding');
+    const table = await tableOf();
+    expect(
+      within(table).getByRole('row', { name: /Junior.*Seniority level.*3/ }),
+    ).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: /Coding.*Question type/ })).toBeInTheDocument();
+    expect(within(table).queryByText('Mid')).toBeNull(); // archived
+    expect(screen.getByText('2 of 3 tags')).toBeInTheDocument();
   });
 
-  it('adds a tag to a list, and shows a clash from the server', async () => {
+  it('filters by list and by status, and searches by name', async () => {
+    mockApi(base);
+    renderApp('/admin/tags');
+    const table = await tableOf();
+    const names = () =>
+      within(table)
+        .getAllByRole('rowheader')
+        .map((h) => h.textContent);
+
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'archived');
+    expect(names()).toEqual(['Mid']);
+    expect(within(table).getByText('Archived')).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: 'Restore Mid' })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'all');
+    expect(names()).toEqual(['Coding', 'Junior', 'Mid']);
+
+    await userEvent.selectOptions(screen.getByLabelText('List'), 'seniority');
+    expect(names()).toEqual(['Junior', 'Mid']);
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search tags' }), 'jun');
+    expect(names()).toEqual(['Junior']);
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search tags' }), 'xyz');
+    expect(await screen.findByText('No tags match')).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]!);
+    // back to the default (active only); the table was replaced by the empty state, so look it up again
+    const again = await tableOf();
+    expect(
+      within(again)
+        .getAllByRole('rowheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Coding', 'Junior']);
+  });
+
+  it('adds a tag to a chosen list from the Add tag dialog', async () => {
     const calls = mockApi({
       ...base,
       'POST /api/admin/tag-categories/seniority/tags': {
@@ -64,21 +106,24 @@ describe('admin tags (seniority, question type)', () => {
       },
     });
     renderApp('/admin/tags');
-    await userEvent.type(await screen.findByLabelText('Add to Seniority level'), 'Staff');
-    await userEvent.click(screen.getByRole('button', { name: 'Add to Seniority level list' }));
+    const dialog = await addTag();
+    await userEvent.selectOptions(within(dialog).getByLabelText('List'), 'seniority');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Staff');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add tag' }));
     expect(await screen.findByText('Added Staff')).toBeInTheDocument();
     expect(calls.find((c) => c.method === 'POST')).toMatchObject({
       path: '/api/admin/tag-categories/seniority/tags',
       body: { label: 'Staff' },
     });
+  });
 
-    mockApi({
-      ...base,
-      'POST /api/admin/tag-categories/type/tags': {
-        status: 409,
-        body: { error: { code: 'TAG_EXISTS', message: 'That name is already used in this list' } },
-      },
-    });
+  it('the dialog starts on the list you are filtering by', async () => {
+    mockApi(base);
+    renderApp('/admin/tags');
+    await tableOf();
+    await userEvent.selectOptions(screen.getByLabelText('List'), 'type');
+    const dialog = await addTag();
+    expect(within(dialog).getByLabelText('List')).toHaveValue('type');
   });
 
   it('shows the API message when the name is already used', async () => {
@@ -90,9 +135,13 @@ describe('admin tags (seniority, question type)', () => {
       },
     });
     renderApp('/admin/tags');
-    await userEvent.type(await screen.findByLabelText('Add to Question type'), 'coding');
-    await userEvent.click(screen.getByRole('button', { name: 'Add to Question type list' }));
-    expect(await screen.findByText('That name is already used in this list')).toBeInTheDocument();
+    const dialog = await addTag();
+    await userEvent.selectOptions(within(dialog).getByLabelText('List'), 'type');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'coding');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add tag' }));
+    expect(
+      await within(dialog).findByText('That name is already used in this list'),
+    ).toBeInTheDocument();
   });
 
   it('renames, archives and restores', async () => {
@@ -104,13 +153,15 @@ describe('admin tags (seniority, question type)', () => {
     });
     renderApp('/admin/tags');
     await userEvent.click(await screen.findByRole('button', { name: 'Rename Junior' }));
-    const input = screen.getByLabelText('New name for Junior');
+    const dialog = await screen.findByRole('dialog', { name: 'Rename Junior' });
+    const input = within(dialog).getByLabelText('Name');
     await userEvent.clear(input);
     await userEvent.type(input, 'Entry level');
-    await userEvent.click(within(input.closest('form')!).getByRole('button', { name: 'Save' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Renamed to Entry level')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Archive Junior' }));
     expect(await screen.findByText('Archived Junior')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'archived');
     await userEvent.click(screen.getByRole('button', { name: 'Restore Mid' }));
     expect(await screen.findByText('Restored Mid')).toBeInTheDocument();
     expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`)).toEqual([
@@ -123,7 +174,7 @@ describe('admin tags (seniority, question type)', () => {
   it('has no axe violations', async () => {
     mockApi(base);
     const { container } = renderApp('/admin/tags');
-    await screen.findByRole('list', { name: 'Seniority level' });
+    await tableOf();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 });

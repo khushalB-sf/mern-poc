@@ -100,7 +100,7 @@ Base path `/api`. JSON only. All routes except `login`, `refresh`, `logout`, the
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET / POST | `/admin/users` | list: search `q` (name or email fragment), `?deleted=true`, cursor paging (`limit`, `cursor`) / create with an initial password |
+| GET / POST | `/admin/users` | list: search `q` (name or email fragment), filters `role`, `active` (`true`/`false`) and `clientId` (people granted that department), `?deleted=true`, cursor paging (`limit`, `cursor`) / create with an initial password |
 | PATCH / DELETE | `/admin/users/:id` | edit name, email, role, active, password / soft delete (409 `LAST_ADMIN` if it would leave no active admin) |
 | POST | `/admin/users/:id/restore` | restore a deleted user, **inactive** until an admin activates them |
 | PUT | `/admin/users/:id/clients` | replace the departments a user may see |

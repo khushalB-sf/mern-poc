@@ -72,6 +72,41 @@ describe('GET /admin/users', () => {
     expect((await get('/api/admin/users?q=nobody-by-that-name')).body.items).toEqual([]);
   });
 
+  it('filters by role, by status and by department, alone or together, with the search', async () => {
+    const names = (r: request.Response) => r.body.items.map((u: { name: string }) => u.name).sort();
+
+    expect(names(await get('/api/admin/users?role=REVIEWER'))).toEqual([
+      'reviewer',
+      'reviewerNoGrant',
+    ]);
+    expect(names(await get('/api/admin/users?role=ADMIN'))).toEqual(['admin']);
+
+    await db.appUser.update({ where: { id: world.users.plain.id }, data: { active: false } });
+    expect(names(await get('/api/admin/users?active=false'))).toEqual(['plain']);
+    expect((await get('/api/admin/users?active=true')).body.items).toHaveLength(8);
+
+    // a department: the people granted it (an admin has no grants but sees everything, so is not listed)
+    expect(names(await get(`/api/admin/users?clientId=${world.acme.id}`))).toEqual([
+      'authorAcme',
+      'plainAcme',
+      'reviewer',
+    ]);
+
+    expect(
+      names(await get(`/api/admin/users?clientId=${world.acme.id}&role=AUTHOR&q=acme`)),
+    ).toEqual(['authorAcme']);
+
+    // the filters page with the cursor like everything else
+    const { items } = await allPages('/api/admin/users?role=AUTHOR', 2);
+    expect(items).toHaveLength(4);
+  });
+
+  it('rejects an unknown role, status or department id', async () => {
+    for (const qs of ['role=OWNER', 'active=maybe', 'clientId=not-a-uuid', 'role=A&role=B']) {
+      expect((await get(`/api/admin/users?${qs}`)).status, qs).toBe(400);
+    }
+  });
+
   it('takes % and _ literally, so a search cannot widen itself', async () => {
     expect((await get('/api/admin/users?q=%25')).body.items).toEqual([]);
     expect((await get('/api/admin/users?q=_')).body.items).toEqual([]);
