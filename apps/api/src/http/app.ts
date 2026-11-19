@@ -13,6 +13,7 @@ import { questionRoutes } from '../modules/questions/routes.js';
 import { tagRoutes } from '../modules/tags/routes.js';
 import { docsRoutes } from '../docs/routes.js';
 import { originCheck } from './csrf.js';
+import { perUserLimit } from './rateLimit.js';
 import { rejectNul } from './nul.js';
 import { errorHandler, notFoundHandler } from './errors.js';
 
@@ -72,9 +73,11 @@ export function createApp({ config, logger, db }: AppDeps): Express {
   if (config.DOCS_ENABLED) api.use(docsRoutes());
   api.use('/auth', authRoutes(db, config));
   api.use('/questions', questionRoutes(db, config));
-  api.use('/tags', tagRoutes(db, config));
-  api.use('/clients', clientRoutes(db, config));
-  api.use('/admin', adminRoutes(db, config));
+  // One allowance per signed-in user for everything that is not the questions API (which has its own).
+  const otherLimit = perUserLimit(config.RATE_LIMIT_OTHER_PER_MIN);
+  api.use('/tags', tagRoutes(db, config, otherLimit));
+  api.use('/clients', clientRoutes(db, config, otherLimit));
+  api.use('/admin', adminRoutes(db, config, otherLimit));
   app.use('/api', api);
 
   app.use(notFoundHandler);

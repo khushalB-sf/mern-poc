@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Logger } from 'pino';
 import { Prisma } from '../../generated/prisma/client.js';
 import type { Db, Queryable } from '../../db/prisma.js';
@@ -16,13 +17,45 @@ const IN_TECH = { category: { slug: 'technology' } } as const;
 const isUnique = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
 
-/** "Node.js", "node-js" and "nodejs" are the same technology. */
-export const keyOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-export const slugOf = (s: string) =>
+/**
+ * The identity of a technology name. Case, spaces, dots, dashes and underscores do not matter, so
+ * "Node.js", "node-js" and "nodejs" are one technology. Symbols and letters do: "C", "C++" and "C#"
+ * stay three different ones, and non-Latin names keep their own identity.
+ */
+export const keyOf = (s: string) =>
   s
+    .normalize('NFKC')
     .toLowerCase()
+    .replace(/[\s._-]/gu, '');
+
+/** A name needs at least one letter or digit, in any script. */
+export const hasLetterOrDigit = (s: string) => /[\p{L}\p{N}]/u.test(s);
+
+/**
+ * The stored `value`: lowercase ASCII, safe in a URL and in the "category:value" tag grammar.
+ * Symbols are spelled out (C++ is c-plus-plus, C# is c-sharp), accents dropped (Café is cafe), and a
+ * name with no Latin letters at all gets a stable hash so it still has a valid, unique value.
+ */
+export function slugOf(label: string): string {
+  const slug = label
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/\+/g, '-plus')
+    .replace(/#/g, '-sharp')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+  return (
+    slug || `tech-${createHash('sha1').update(label.normalize('NFKC')).digest('hex').slice(0, 8)}`
+  );
+}
+
+/** The first of value, value-2, value-3 ... not in `taken`: two names may share a base value. */
+const freeValue = (base: string, taken: Set<string>) => {
+  let v = base;
+  for (let n = 2; taken.has(v); n++) v = `${base}-${n}`;
+  return v;
+};
 
 const liveDepartment = async (db: Queryable, id: string) => {
   const c = await db.client.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
@@ -94,7 +127,7 @@ export async function addDepartmentTechnology(
 ) {
   const label = rawLabel.trim();
   const key = keyOf(label);
-  if (!key) throw badRequest('Use letters or numbers in the name');
+  if (!hasLetterOrDigit(label)) throw badRequest('Use letters or numbers in the name');
 
   const run = () =>
     db.$transaction(async (tx) => {
@@ -108,7 +141,11 @@ export async function addDepartmentTechnology(
       if (!tag) {
         const category = await tx.tagCategory.findUniqueOrThrow({ where: { slug: 'technology' } });
         tag = await tx.tag.create({
-          data: { categoryId: category.id, value: slugOf(label), label },
+          data: {
+            categoryId: category.id,
+            value: freeValue(slugOf(label), new Set(all.map((t) => t.value))),
+            label,
+          },
           select: { id: true, value: true, label: true, archivedAt: true },
         });
         await recordAudit(tx, log, {
@@ -206,7 +243,7 @@ export async function renameTechnology(
 ) {
   const label = rawLabel.trim();
   const key = keyOf(label);
-  if (!key) throw badRequest('Use letters or numbers in the name');
+  if (!hasLetterOrDigit(label)) throw badRequest('Use letters or numbers in the name');
   return db.$transaction(async (tx) => {
     const all = await tx.tag.findMany({ where: IN_TECH, select: { id: true, label: true } });
     const current = all.find((t) => t.id === tagId);

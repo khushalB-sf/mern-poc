@@ -602,7 +602,17 @@ export function buildOpenApi() {
         get: {
           tags: ['Admin'],
           summary: 'All users with role and departments (ADMIN)',
+          description:
+            'With `deleted=true`, the soft-deleted users instead (so one can be restored).',
           security: secured,
+          parameters: [
+            {
+              name: 'deleted',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['true'] },
+            },
+          ],
           responses: {
             200: {
               description: 'OK',
@@ -654,6 +664,26 @@ export function buildOpenApi() {
             401: R[401],
             403: R[403],
             404: errorResponse('No such user', 'NOT_FOUND', 'User not found'),
+          },
+        },
+      },
+      '/admin/users/{id}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore a deleted user (ADMIN)',
+          description:
+            'The account returns switched off (inactive) with its role and department grants; sessions signed out by the delete stay signed out. Set it active to let the person in again.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            200: {
+              description: 'Restored (inactive)',
+              content: json({ type: 'object', properties: { user: ref('AdminUser') } }),
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('Not deleted', 'NOT_FOUND', 'Deleted user not found'),
           },
         },
       },

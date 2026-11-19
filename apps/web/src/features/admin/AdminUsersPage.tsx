@@ -11,11 +11,73 @@ import { useToast } from '../../shared/ui/Toast';
 import { useMe } from '../auth/hooks';
 import { Avatar } from '../../shared/ui/Avatar';
 import { Page, PageHeader } from '../../shared/ui/Page';
-import { useAdminUsers, useChangeRole, useDeleteUser } from './hooks';
+import {
+  useAdminUsers,
+  useChangeRole,
+  useDeleteUser,
+  useDeletedUsers,
+  useRestoreUser,
+} from './hooks';
 import { UserDialog } from './UserDialog';
 
 const ROLES = Object.keys(ROLE_LABEL) as Role[];
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong.');
+
+function DeletedUsers() {
+  const deleted = useDeletedUsers();
+  const restore = useRestoreUser();
+  const toast = useToast();
+  if (!deleted.data || deleted.data.length === 0) return null;
+  return (
+    <section aria-labelledby="deleted-users" className="mt-10">
+      <h2 id="deleted-users" className="font-serif text-xl font-semibold">
+        Deleted users
+      </h2>
+      <p className="mt-1 text-sm text-ink-soft">
+        They cannot sign in, and their questions and history are kept. A restored account comes back
+        switched off: edit it and tick Active when you want them back in.
+      </p>
+      {restore.isError && (
+        <p role="alert" className="mt-3 text-sm font-medium text-danger">
+          {message(restore.error)}
+        </p>
+      )}
+      <ul
+        aria-label="Deleted users"
+        className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
+      >
+        {deleted.data.map((u) => (
+          <li key={u.id} className="flex items-center justify-between gap-3 p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar name={u.name} />
+              <div className="min-w-0">
+                <p className="font-medium">{u.name}</p>
+                <p className="text-sm text-ink-soft">
+                  {u.email} · {ROLE_LABEL[u.role]}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              aria-label={`Restore ${u.name}`}
+              loading={restore.isPending && restore.variables === u.id}
+              onClick={() =>
+                restore.mutate(u.id, {
+                  onSuccess: () =>
+                    toast(
+                      `Restored ${u.name}. Their account is switched off until you activate it.`,
+                    ),
+                })
+              }
+            >
+              Restore
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function AdminUsersPage() {
   useDocumentTitle('Users');
@@ -151,6 +213,8 @@ export function AdminUsersPage() {
         </div>
       )}
 
+      <DeletedUsers />
+
       {editing !== undefined && (
         <UserDialog
           user={editing}
@@ -181,7 +245,7 @@ export function AdminUsersPage() {
       >
         <p>
           {deleting?.name} will no longer be able to sign in and will disappear from this list.
-          Their questions and history are kept.
+          Their questions and history are kept, and you can restore the account later.
         </p>
       </ConfirmDialog>
     </Page>

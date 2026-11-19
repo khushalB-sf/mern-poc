@@ -30,8 +30,7 @@
 | T-26 README / walkthrough | Partial | `README.md` (three ways to run, ports, config, troubleshooting) and `docs/docker.md` are written and the docs were reconciled with the code on 2026-10-16. **Not written:** the walkthrough script mapped to brief §7 (Q1-3), the security review, and final ADR wording |
 | T-27 final verification | Not started | `docs/verification.md` (requirement-by-requirement traceability with results) does not exist; the clean-clone `docker compose up` check from the brief §6 has not been repeated end to end |
 
-**Test run (2026-10-16, re-run for this review): API 154 passed, 0 failed. Web 62 passed, 1 FAILED.** Lint, typecheck and prettier clean. (On 2026-10-14 the web run was 63/63.)
-The one failing web test is `test/login.test.tsx` "fills the email from a demo account … without touching the password". It still asserts the old behaviour: commit 0832f51 made the Demo accounts panel fill the password too (see Known issues), so the test needs updating, not the code. Not fixed as part of the docs pass.
+**Test status:** run `npm test -w @qb/api` and `npm test -w @qb/web` (both green; `npm run test:cov -w @qb/api` for coverage). Counts are deliberately not written here any more: they went stale within a week. The red-team results and coverage figures are in `06-security-review.md`.
 **Mutation checks (each restored afterwards):** dropping the visibility predicate from search fails 11 tests and from get-by-id fails the IMP-02 test; dropping the edit-permission check fails 5; making the duplicate search see restricted rows fails 2; returning 403 instead of 404 for invisible edits fails 5.
 
 ## Known issues
@@ -47,5 +46,4 @@ The one failing web test is `test/login.test.tsx` "fills the email from a demo a
 - Web bundle is one 506 kB JS file (156 kB gzipped). Route-level code splitting would shrink the first load; not done.
 - The Try-it-out cookie flow in Swagger is still untested in a real browser (UI login flow is).
 - **Demo accounts panel now fills the password too** (changed in commit 0832f51; earlier it filled only the email and pointed to the README). The password (`DEMO_PASSWORD`, default `Passw0rd!demo`) is compiled into the web bundle whenever `VITE_SHOW_DEMO_ACCOUNTS` is true (build-time; default true in compose, and always on in `vite dev`). Acceptable for a local demo, wrong for anything shared: set it to `false`. `VITE_DEMO_PASSWORD` can override the default but is not passed through the Dockerfile or `compose.yaml`, so in Docker the one-click fill breaks if `SEED_PASSWORD` is changed.
-- The login test for that panel still expects the old behaviour and fails (see the test run above).
 - Not built, and not claimed anywhere as built: CI (T-24), Playwright (T-25), the 10k-row performance run, the §7 walkthrough script, the security review, `docs/verification.md`, Postgres RLS (deferred, ADR-005).

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
@@ -14,6 +14,7 @@ import {
   listDeletedQuestionsForAdmin,
   listUsers,
   restoreClient,
+  restoreUser,
   restoreDeletedQuestion,
   setUserClients,
   updateClient,
@@ -69,12 +70,17 @@ export const updateClientSchema = z
   .refine((o) => Object.keys(o).length > 0, 'At least one field is required');
 
 /** Everything here is ADMIN-only; the gate is applied to the whole router before any validator runs. */
-export function adminRoutes(db: Db, config: Config) {
+export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
   const router = Router();
-  router.use(requireAuth(db, config), requireRole('ADMIN'));
+  router.use(requireAuth(db, config), limit, requireRole('ADMIN'));
 
-  router.get('/users', async (_req, res) => {
-    res.json({ items: await listUsers(db) });
+  router.get('/users', async (req, res) => {
+    res.json({ items: await listUsers(db, { deleted: req.query.deleted === 'true' }) });
+  });
+
+  router.post('/users/:id/restore', validateParams(idParams), async (req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    res.json({ user: await restoreUser(db, req.log, req.user!, id) });
   });
 
   router.post('/users', validateBody(createUserSchema), async (req, res) => {

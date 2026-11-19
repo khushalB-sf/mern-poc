@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../shared/api/client';
@@ -9,7 +10,15 @@ import { ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
 import { canCreate, canEdit, isAdmin, useMe } from '../auth/hooks';
 import { DuplicateDialog } from './components/DuplicateDialog';
-import { useClients, useCreateQuestion, useQuestion, useTags, useUpdateQuestion } from './hooks';
+import {
+  refreshTaxonomy,
+  useClients,
+  useCreateQuestion,
+  useQuestion,
+  useTags,
+  useUpdateQuestion,
+} from './hooks';
+import { isTagConflict, TAG_CONFLICT_MESSAGE } from '../../shared/api/errors';
 import { QuestionForm, type FormValues } from './QuestionForm';
 
 const EMPTY: FormValues = { text: '', answerNotes: '', tags: [], clientId: '' };
@@ -29,6 +38,7 @@ function explain(e: unknown): { formError?: string; fields?: FieldErrors } {
       ? { fields }
       : { formError: 'Some details are not valid. Check the form and try again.' };
   }
+  if (isTagConflict(e)) return { formError: TAG_CONFLICT_MESSAGE };
   if (e.code.startsWith('UNKNOWN_TAG'))
     return { formError: `${e.message}. Reload the page to get the latest tags.` };
   if (e.status === 404) return { fields: { clientId: "That department isn't available to you." } };
@@ -125,6 +135,7 @@ function CreateView({
   const navigate = useNavigate();
   const toast = useToast();
   const create = useCreateQuestion();
+  const qc = useQueryClient();
   const [formError, setFormError] = useState<string>();
   const [serverErrors, setServerErrors] = useState<FieldErrors>();
   const [duplicate, setDuplicate] = useState<{
@@ -150,6 +161,7 @@ function CreateView({
           navigate(`/questions/${q.id}`);
         },
         onError: (e) => {
+          if (isTagConflict(e)) void refreshTaxonomy(qc);
           if (e instanceof ApiError && e.code === 'DUPLICATE_SUSPECTED') {
             setDuplicate({ matches: (e.details.matches as DuplicateMatch[]) ?? [], values });
             return;
@@ -203,6 +215,7 @@ function EditView({
   const navigate = useNavigate();
   const toast = useToast();
   const update = useUpdateQuestion(question.id);
+  const qc = useQueryClient();
   const [formError, setFormError] = useState<string>();
   const [serverErrors, setServerErrors] = useState<FieldErrors>();
 
@@ -235,6 +248,7 @@ function EditView({
                 navigate(`/questions/${question.id}`);
               },
               onError: (e) => {
+                if (isTagConflict(e)) void refreshTaxonomy(qc);
                 const { formError, fields } = explain(e);
                 setFormError(formError);
                 setServerErrors(fields);

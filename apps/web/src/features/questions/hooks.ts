@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import {
   createQuestion,
   deleteQuestion,
@@ -45,11 +51,18 @@ const rank = (slug: string) => {
 };
 
 // `forFilter` narrows Technology to the caller's departments (the list page's filter bar only).
+/** After the API says the taxonomy changed under us, fetch the current tags and departments. */
+export const refreshTaxonomy = (qc: QueryClient) =>
+  Promise.all(['tags', 'clients'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
+
 export const useTags = (forFilter = false) =>
   useQuery({
     queryKey: forFilter ? ['tags', 'filter'] : ['tags'],
     queryFn: ({ signal }) => listTags(signal, forFilter),
-    staleTime: Infinity,
+    // An admin can archive or move technologies at any time, so the list is re-checked when you come
+    // back to the tab after a minute (not never, as it once was).
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
     // Technology is what people filter by most, so it comes first; the API returns alphabetical order.
     select: (categories) =>
       [...categories].sort((a, b) => rank(a.slug) - rank(b.slug) || a.name.localeCompare(b.name)),
@@ -59,7 +72,8 @@ export const useClients = () =>
   useQuery({
     queryKey: ['clients'],
     queryFn: ({ signal }) => listClients(signal),
-    staleTime: 5 * 60_000,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 
 export function useCreateQuestion() {

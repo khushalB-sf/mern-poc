@@ -1,12 +1,12 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
 import { requireAuth } from '../auth/middleware.js';
 import { filterTechnologyIds, orphanTagIds } from './tags.js';
 
-export function tagRoutes(db: Db, config: Config) {
+export function tagRoutes(db: Db, config: Config, limit: RequestHandler) {
   const router = Router();
-  router.use(requireAuth(db, config));
+  router.use(requireAuth(db, config), limit);
 
   // Global taxonomy, not client-specific and without counts, so it reveals nothing about restricted questions.
   router.get('/', async (req, res) => {

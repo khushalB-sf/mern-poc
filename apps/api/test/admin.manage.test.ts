@@ -43,6 +43,7 @@ describe('admin gate on the new routes', () => {
   const routes: [Method, string, object][] = [
     ['post', '/users', newUser],
     ['delete', `/users/${UUID}`, {}],
+    ['post', `/users/${UUID}/restore`, {}],
     ['patch', `/clients/${UUID}`, { name: 'x' }],
     ['delete', `/clients/${UUID}`, {}],
     ['get', `/clients/${UUID}/impact`, {}],
@@ -221,6 +222,66 @@ describe('delete a user (soft)', () => {
     expect((await adminCall('delete', `/users/${admin().id}`)).status).toBe(403);
     expect((await adminCall('delete', `/users/${UUID}`)).status).toBe(404);
     expect(await db.appUser.count({ where: { id: admin().id, deletedAt: null } })).toBe(1);
+  });
+});
+
+describe('restore a deleted user', () => {
+  const ids = (res: { body: { items: { id: string }[] } }) => res.body.items.map((i) => i.id);
+
+  it('lists deleted users and restores one as inactive, keeping everything they own', async () => {
+    const u = world.users.authorB;
+    const q = await addQuestion(db, world, { text: 'Written before leaving', authorId: u.id });
+    await adminCall('delete', `/users/${u.id}`).expect(204);
+
+    expect(ids(await adminCall('get', '/users'))).not.toContain(u.id);
+    const deleted = await adminCall('get', '/users?deleted=true');
+    expect(deleted.body.items).toMatchObject([
+      { id: u.id, email: 'authorb@test.dev', role: 'AUTHOR' },
+    ]);
+    // the email stays reserved while the account is deleted
+    expect(
+      (await adminCall('post', '/users', { ...newUser, email: 'authorb@test.dev' })).status,
+    ).toBe(409);
+
+    const res = await adminCall('post', `/users/${u.id}/restore`);
+    expect(res.status).toBe(200);
+    // back in the list, but switched off until an admin decides to let them in again
+    expect(res.body.user).toMatchObject({ id: u.id, active: false, role: 'AUTHOR' });
+    expect(ids(await adminCall('get', '/users'))).toContain(u.id);
+    expect(ids(await adminCall('get', '/users?deleted=true'))).not.toContain(u.id);
+    expect((await login('authorb@test.dev', PASSWORD)).status).toBe(401);
+
+    await adminCall('patch', `/users/${u.id}`, { active: true }).expect(200);
+    expect((await login('authorb@test.dev', PASSWORD)).status).toBe(200); // same password as before
+    expect((await call(world.users.reviewer, 'get', `/api/questions/${q.id}`)).status).toBe(200);
+    expect(await db.auditEvent.count({ where: { type: 'USER_RESTORED' } })).toBe(1);
+  });
+
+  it('a restore does not bring back sessions that were signed out by the delete', async () => {
+    const u = world.users.authorB;
+    const first = await login('authorb@test.dev', PASSWORD);
+    const refresh = (first.headers['set-cookie'] as unknown as string[])
+      .find((c) => c.startsWith('refresh_token='))!
+      .split(';')[0]!;
+    await adminCall('delete', `/users/${u.id}`).expect(204);
+    await adminCall('post', `/users/${u.id}/restore`).expect(200);
+    await adminCall('patch', `/users/${u.id}`, { active: true }).expect(200);
+    expect((await request(app).post('/api/auth/refresh').set('Cookie', refresh)).status).toBe(401);
+  });
+
+  it('only a deleted user can be restored; unknown ids are 404; deleted accounts stay out of other lists', async () => {
+    expect((await adminCall('post', `/users/${world.users.authorB.id}/restore`)).status).toBe(404); // not deleted
+    expect((await adminCall('post', `/users/${UUID}/restore`)).status).toBe(404);
+    await adminCall('delete', `/users/${world.users.authorB.id}`).expect(204);
+    await adminCall('post', `/users/${world.users.authorB.id}/restore`).expect(200);
+    expect((await adminCall('post', `/users/${world.users.authorB.id}/restore`)).status).toBe(404); // already back
+  });
+
+  it('keeps the department grants they had (inactive until re-enabled)', async () => {
+    const u = world.users.authorAcme;
+    await adminCall('delete', `/users/${u.id}`).expect(204);
+    const res = await adminCall('post', `/users/${u.id}/restore`);
+    expect(res.body.user.clients.map((c: { name: string }) => c.name)).toEqual(['Acme']);
   });
 });
 
@@ -544,6 +605,62 @@ describe('department technologies', () => {
     expect((await adminCall('post', `/clients/${UUID}/technologies`, { label: 'Go' })).status).toBe(
       404,
     );
+  });
+
+  it('names that differ only by a symbol are different technologies (C, C++, C#), and Unicode names work', async () => {
+    const add = async (label: string) =>
+      (await adminCall('post', `/clients/${world.globex.id}/technologies`, { label })).body
+        .technology;
+    const c = await add('C');
+    const cpp = await add('C++');
+    const csharp = await add('C#');
+    expect(new Set([c.id, cpp.id, csharp.id]).size).toBe(3);
+    expect([c, cpp, csharp].map((t) => t.created)).toEqual([true, true, true]);
+    expect((await add('c++')).id).toBe(cpp.id); // the same name again links the same one
+    expect((await add(' C ++ ')).id).toBe(cpp.id);
+
+    const values = (
+      await db.tag.findMany({
+        where: { id: { in: [c.id, cpp.id, csharp.id] } },
+        orderBy: { value: 'asc' },
+      })
+    ).map((t) => t.value);
+    expect(values).toEqual(['c', 'c-plus-plus', 'c-sharp']);
+
+    const cafe = await add('Café');
+    expect((await db.tag.findUniqueOrThrow({ where: { id: cafe.id } })).value).toBe('cafe');
+    expect((await add('CAFÉ')).id).toBe(cafe.id);
+    const jp = await add('日本語');
+    expect((await db.tag.findUniqueOrThrow({ where: { id: jp.id } })).value).toMatch(
+      /^tech-[0-9a-f]{8}$/,
+    );
+    // and a question can actually use the new technologies
+    const q = await call(world.users.authorGlobex, 'post', '/api/questions', {
+      text: 'Pointers in C versus C++?',
+      clientId: world.globex.id,
+      tags: ['technology:c', 'technology:c-plus-plus'],
+    });
+    expect(q.status).toBe(201);
+  });
+
+  it('a spelled-out name resolves to the symbol one it slugs to, instead of colliding on the value', async () => {
+    const cpp = (
+      await adminCall('post', `/clients/${world.globex.id}/technologies`, { label: 'C++' })
+    ).body.technology;
+    for (const label of ['C-Plus-Plus', 'c plus plus']) {
+      const res = await adminCall('post', `/clients/${world.globex.id}/technologies`, { label });
+      expect(res.status).toBe(201);
+      expect(res.body.technology).toMatchObject({ id: cpp.id, created: false });
+    }
+    expect(await db.tag.count({ where: { value: { startsWith: 'c-plus-plus' } } })).toBe(1);
+  });
+
+  it('a name with no letters or digits is refused', async () => {
+    for (const label of ['+++', '###', '😀', ' - ']) {
+      expect(
+        (await adminCall('post', `/clients/${world.globex.id}/technologies`, { label })).status,
+      ).toBe(400);
+    }
   });
 
   it('renames the label everywhere, never the value, and refuses a clash', async () => {

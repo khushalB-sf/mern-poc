@@ -4,6 +4,7 @@ import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { Icon } from '../../shared/ui/Icon';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
+import { ApproachPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
 import { FeatureWalkthrough } from './FeatureWalkthrough';
 import { Code, Flow } from './Flow';
 import { MindMap } from './MindMap';
@@ -303,6 +304,10 @@ function DatabasePanel() {
               <Code>tag_category</Code>: many tags per question, many questions per tag.
             </li>
             <li>
+              <Code>client</Code> ─ <Code>client_tag</Code> ─ <Code>tag</Code>: the technologies a
+              department offers. Many to many, so one technology can serve several departments.
+            </li>
+            <li>
               <Code>audit_event</Code> → <Code>app_user</Code> and, optionally,{' '}
               <Code>question</Code>: the who and when behind the history.
             </li>
@@ -358,7 +363,17 @@ function SessionPanel() {
       body: (
         <>
           Sign-in answers the same error for an unknown email, a wrong password and a disabled
-          account, and is rate-limited per address and email.
+          account. It is rate-limited per address and email, and per address across all emails, so
+          trying a different email each time does not help.
+        </>
+      ),
+    },
+    {
+      id: 'revoke',
+      body: (
+        <>
+          Resetting a password, deactivating or deleting an account ends all of that person’s
+          sessions at once. The last active admin cannot be removed.
         </>
       ),
     },
@@ -395,14 +410,14 @@ const TABS: {
     id: 'roles',
     label: 'Roles',
     title: 'Roles: what you can do',
-    lead: 'Every account has one global role. It does not depend on the client.',
+    lead: 'Every account has one global role. It does not depend on the department.',
     Body: RolesPanel,
   },
   {
     id: 'grants',
     label: 'Grants',
     title: 'Grants: what you can see',
-    lead: 'Everyone sees global questions. A grant adds one client’s questions on top.',
+    lead: 'Everyone sees global questions. A grant adds one department’s questions on top.',
     Body: GrantsPanel,
   },
   {
@@ -454,6 +469,27 @@ const TABS: {
     lead: 'How the API knows who you are.',
     Body: SessionPanel,
   },
+  {
+    id: 'approach',
+    label: 'Approach',
+    title: 'The implementation approach',
+    lead: 'Ten decisions that shape the system, each with the problem it solves, why it was chosen and what it costs.',
+    Body: ApproachPanel,
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    title: 'Security: what defends it, and the test that proves it',
+    lead: 'Every defence below is in the code and paired with the test that proves it. A red-team pass tried to break the system; what it found was fixed.',
+    Body: SecurityPanel,
+  },
+  {
+    id: 'practices',
+    label: 'Engineering practices',
+    title: 'How the work is done',
+    lead: 'Testing, test-driven development, code quality, accessibility, documentation and delivery: the habits behind the code.',
+    Body: PracticesPanel,
+  },
 ];
 
 export function HowItWorksPage() {
@@ -488,9 +524,10 @@ export function HowItWorksPage() {
       <h1 className="font-serif text-3xl font-semibold leading-tight sm:text-4xl">How it works</h1>
       <p className="mt-3 max-w-3xl text-lg text-ink-soft">
         Two separate questions decide everything.{' '}
-        <strong className="text-ink">What can you see?</strong> is answered by client grants.{' '}
+        <strong className="text-ink">What can you see?</strong> is answered by department grants.{' '}
         <strong className="text-ink">What can you change?</strong> is answered by your role.
-        Visibility is always checked first, in the database.
+        Visibility is always checked first, in the database. The last three tabs cover the approach,
+        the security model and the engineering practices behind it.
       </p>
 
       <div
@@ -498,7 +535,7 @@ export function HowItWorksPage() {
         aria-label="How it works"
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="mt-6 flex gap-2 overflow-x-auto pb-1"
+        className="mt-6 flex flex-wrap gap-2"
       >
         {TABS.map((t) => {
           const on = t.id === active;

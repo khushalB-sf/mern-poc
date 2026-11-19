@@ -21,6 +21,9 @@ const TAB_LABELS = [
   'Each operation',
   'Database',
   'Sessions',
+  'Approach',
+  'Security',
+  'Engineering practices',
 ];
 
 describe('how it works page', () => {
@@ -82,7 +85,10 @@ describe('how it works page', () => {
       'true',
     );
     await userEvent.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Engineering practices' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     await userEvent.keyboard('{ArrowRight}'); // wraps round to the first tab
     expect(screen.getByRole('tab', { name: 'Feature by feature' })).toHaveAttribute(
       'aria-selected',
@@ -101,6 +107,9 @@ describe('how it works page', () => {
       'Open a question',
       'Add a question',
       'Edit a question',
+      'Review a question',
+      'Manage a department’s technologies',
+      'Delete and restore a department',
       'Stay signed in',
     ]);
 
@@ -233,4 +242,66 @@ describe('how it works page', () => {
     }
     // One axe scan per tab is slow in jsdom, so this test gets more than the 5 s default.
   }, 30_000);
+
+  it('explains the implementation approach as problem, decision, why and cost', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#approach');
+    const list = await screen.findByRole('list', { name: 'Implementation decisions' });
+    const decisions = within(list).getAllByRole('listitem');
+    expect(decisions).toHaveLength(10);
+    const first = decisions[0]!;
+    for (const label of ['The problem', 'What we did', 'Why', 'The cost']) {
+      expect(within(first).getByText(label)).toBeInTheDocument();
+    }
+    expect(
+      within(list).getByRole('heading', { name: 'Who can see a question is decided in the SQL' }),
+    ).toBeInTheDocument();
+    expect(
+      within(list).getByRole('heading', { name: /Technologies belong to departments/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('pairs every defence with the test that proves it', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#security');
+    const table = await screen.findByRole('table', { name: /Threats, the defence/ });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.length).toBeGreaterThanOrEqual(8);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('cell')).toHaveLength(2); // defence, proof (the threat is the row header)
+      expect(row.textContent).toMatch(/\.test\.|docs\/|hardening|auth\.test|A\d/);
+    }
+  });
+
+  it('covers testing, TDD, quality, accessibility, documentation and delivery', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#practices');
+    const panel = await screen.findByRole('tabpanel');
+    for (const name of [
+      'Testing',
+      'Test-driven development and the red team',
+      'Code quality',
+      'Accessibility',
+      'Decisions and documentation',
+      'Delivery and operations',
+    ]) {
+      expect(within(panel).getByRole('heading', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('describes the review and department-technology features end to end', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works');
+    await userEvent.click(await screen.findByRole('button', { name: 'Review a question' }));
+    let tables = screen.getByRole('list', { name: 'Tables touched' });
+    expect(within(tables).getByText(/QUESTION_APPROVED or QUESTION_REJECTED/)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Manage a department’s technologies' }),
+    );
+    tables = screen.getByRole('list', { name: 'Tables touched' });
+    expect(within(tables).getByText('client_tag')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete and restore a department' }));
+    tables = screen.getByRole('list', { name: 'Tables touched' });
+    expect(within(tables).getByText(/deleted_at = now/)).toBeInTheDocument();
+  });
 });

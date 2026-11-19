@@ -59,9 +59,9 @@ const signOutEverywhere = (db: Queryable, userId: string) =>
   });
 
 // ponytail: no paging. Fine for an internal team; add limit/offset when user counts reach the thousands.
-export async function listUsers(db: Db) {
+export async function listUsers(db: Db, { deleted = false } = {}) {
   const users = await db.appUser.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: deleted ? { not: null } : null },
     orderBy: [{ name: 'asc' }, { id: 'asc' }],
     select: userSelect,
   });
@@ -196,6 +196,24 @@ export async function updateUser(
     if (isUnique(e)) throw emailTaken();
     throw e;
   }
+}
+
+/**
+ * Undoes deleteUser. The account comes back switched off: the sessions it had were already signed out,
+ * and letting someone in again is a decision an admin makes explicitly (edit, set active).
+ */
+export async function restoreUser(db: Db, log: Logger, actor: AuthUser, id: string) {
+  return db.$transaction(async (tx) => {
+    const current = await tx.appUser.findFirst({ where: { id, deletedAt: { not: null } } });
+    if (!current) throw notFound('Deleted user not found');
+    await tx.appUser.update({ where: { id }, data: { deletedAt: null, active: false } });
+    await recordAudit(tx, log, {
+      type: 'USER_RESTORED',
+      actorId: actor.id,
+      payload: { userId: id, email: current.email, role: current.role },
+    });
+    return loadUser(tx, id);
+  });
 }
 
 /** Soft delete: the account can no longer sign in or be listed, but the questions and history it made stay. */

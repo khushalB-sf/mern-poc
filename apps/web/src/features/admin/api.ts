@@ -110,3 +110,11 @@ export const setOtherTechnologyArchived = ({ id, archived }: { id: string; archi
   apiFetch<void>(`/admin/technologies/${id}/${archived ? 'archive' : 'restore'}`, {
     method: 'POST',
   });
+
+export const listDeletedUsers = (signal?: AbortSignal) =>
+  apiFetch<{ items: AdminUser[] }>('/admin/users?deleted=true', { signal }).then((r) => r.items);
+
+export const restoreUser = (id: string) =>
+  apiFetch<{ user: AdminUser }>(`/admin/users/${id}/restore`, { method: 'POST' }).then(
+    (r) => r.user,
+  );

@@ -7,12 +7,14 @@ import {
   getDepartmentImpact,
   listAdminDepartments,
   listAdminUsers,
+  listDeletedUsers,
   listDeletedDepartments,
   listDeletedQuestions,
   listDepartmentTechnologies,
   listOtherTechnologies,
   restoreDepartment,
   restoreQuestion,
+  restoreUser,
   addDepartmentTechnology,
   removeDepartmentTechnology,
   renameTechnology,
@@ -125,3 +127,11 @@ export const useOtherTechnologies = () =>
 
 export const useSetOtherTechnologyArchived = () =>
   useAdminMutation((v: { id: string; archived: boolean }) => setOtherTechnologyArchived(v));
+
+export const useDeletedUsers = () =>
+  useQuery({
+    queryKey: ['admin', 'users-deleted'],
+    queryFn: ({ signal }) => listDeletedUsers(signal),
+  });
+
+export const useRestoreUser = () => useAdminMutation((id: string) => restoreUser(id));

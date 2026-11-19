@@ -92,7 +92,7 @@ export const FEATURES: Feature[] = [
             fail: '400 VALIDATION_ERROR',
           },
           {
-            text: 'Not too many attempts from this address and email.',
+            text: 'Not too many attempts from this address and email, and not too many from this address across all emails.',
             fail: '429 RATE_LIMITED',
           },
         ],
@@ -448,6 +448,231 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
             table: 'audit_event',
             action: 'INSERT',
             row: 'type = QUESTION_UPDATED · payload = { changes: { text: { from, to } } }',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'review',
+    label: 'Review a question',
+    summary: 'A Reviewer opens a pending question and clicks Approve or Reject, with a note.',
+    outcome:
+      'One transaction records the decision on the question and writes one audit row. A row lock makes two reviewers deciding at once safe.',
+    stages: [
+      {
+        title: 'You open a pending question and choose Approve or Reject',
+        detail:
+          'The review panel shows only for a Reviewer on a pending question they did not write, or for an Admin. Rejecting needs a note, so the author knows what to change.',
+        where: 'web · features/questions/components/ReviewPanel.tsx, auth/hooks.ts → canReview()',
+      },
+      {
+        title: 'React sends the decision',
+        detail: (
+          <>
+            <Code>useReviewQuestion</Code> calls <Code>POST /api/questions/:id/review</Code> with
+            the decision and the note. On success the question, its history and the lists are marked
+            stale.
+          </>
+        ),
+        where: 'web · features/questions/hooks.ts, api.ts',
+      },
+      {
+        title: 'The request passes the gates',
+        detail:
+          'There is no role gate here either: the role check must follow the visibility lookup.',
+        where: 'api · modules/questions/routes.ts',
+        checks: [
+          SESSION,
+          RATE,
+          {
+            text: 'The id is a UUID, the decision is APPROVED or REJECTED, the note is at most 2,000 characters and is required when rejecting.',
+            fail: '400 VALIDATION_ERROR',
+          },
+        ],
+      },
+      {
+        title: 'Lock, then visibility, role and state',
+        detail: 'The same order as every write, inside one transaction.',
+        where: 'api · modules/questions/service.ts → reviewQuestion()',
+        checks: [
+          {
+            text: 'The question row is locked, so a second reviewer waits and then sees the first decision.',
+          },
+          { text: 'You can see the question.', fail: '404 NOT_FOUND' },
+          { text: 'You are a Reviewer or an Admin.', fail: '403 FORBIDDEN' },
+          { text: 'It is not your own question (Admins excepted).', fail: '403 FORBIDDEN' },
+          {
+            text: 'It is still pending (Admins may overturn an earlier decision).',
+            fail: '409 NOT_PENDING',
+          },
+        ],
+      },
+      {
+        title: 'Database: the decision and its record commit together',
+        detail: 'The review note and reviewer are shown on the question and in its history.',
+        where: 'api · modules/questions/question.repo.ts → setReviewDecision()',
+        rows: [
+          { table: 'question', action: 'READ', row: 'FOR UPDATE: the row lock' },
+          {
+            table: 'question',
+            action: 'UPDATE',
+            row: 'status · review_note · reviewed_by_id · reviewed_at',
+          },
+          {
+            table: 'audit_event',
+            action: 'INSERT',
+            row: 'type = QUESTION_APPROVED or QUESTION_REJECTED · payload = { note }',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'technologies',
+    label: 'Manage a department’s technologies',
+    summary: 'An Admin edits a department and adds a technology to it.',
+    outcome:
+      'A new technology is created if the name is new, or the existing one is linked to the department. Existing questions are never touched.',
+    stages: [
+      {
+        title: 'You open Edit on a department and add a technology',
+        detail:
+          'The edit dialog lists the department’s technologies, with Rename and Remove, an Archived list with Restore, and suggestions for technologies other departments already use. Changes apply at once.',
+        where: 'web · features/admin/AdminDepartmentsPage.tsx, DepartmentTechnologies.tsx',
+      },
+      {
+        title: 'React sends the name',
+        detail: (
+          <>
+            <Code>useAddDepartmentTechnology</Code> calls{' '}
+            <Code>POST /api/admin/clients/:id/technologies</Code> with a label. The lists, filters
+            and question forms are marked stale so they pick up the change.
+          </>
+        ),
+        where: 'web · features/admin/hooks.ts, api.ts',
+      },
+      {
+        title: 'The request passes the gates',
+        detail: 'Every /admin route is admin-only, enforced once for the whole router.',
+        where: 'api · modules/admin/routes.ts',
+        checks: [
+          SESSION,
+          { text: 'You are an Admin.', fail: '403 FORBIDDEN' },
+          {
+            text: 'The id is a UUID and the body is exactly { label }, 1 to 50 characters, trimmed.',
+            fail: '400 VALIDATION_ERROR',
+          },
+        ],
+      },
+      {
+        title: 'Match the name, then link or create',
+        detail: (
+          <>
+            “Node.js”, “node-js” and “nodejs” are the same technology. A match is linked (and
+            un-archived if needed); no match is created. Two admins adding the same new name at once
+            end up with one technology, because the unique index decides.
+          </>
+        ),
+        where: 'api · modules/admin/technologies.ts → addDepartmentTechnology()',
+        checks: [
+          { text: 'The department exists and is not deleted.', fail: '404 NOT_FOUND' },
+          { text: 'The name has letters or numbers in it.', fail: '400 BAD_REQUEST' },
+        ],
+      },
+      {
+        title: 'Database: at most three rows change in one transaction',
+        detail:
+          'From now on a question for this department may use the technology, and a question for another department may not.',
+        where: 'api · modules/admin/technologies.ts',
+        rows: [
+          {
+            table: 'tag',
+            action: 'INSERT',
+            row: 'only when the name is new · value = a slug of the label',
+          },
+          {
+            table: 'tag',
+            action: 'UPDATE',
+            row: 'only when an archived match is revived · archived_at = null',
+          },
+          {
+            table: 'client_tag',
+            action: 'INSERT',
+            row: '(department, technology), skipped if it already exists',
+          },
+          {
+            table: 'audit_event',
+            action: 'INSERT',
+            row: 'TAG_CREATED or TAG_RESTORED, then TAG_LINKED',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'delete-department',
+    label: 'Delete and restore a department',
+    summary: 'An Admin deletes a department, then changes their mind and restores it.',
+    outcome:
+      'Nothing is erased. The department and its questions are hidden, the technologies only it used are archived, and a restore brings back exactly what the delete hid.',
+    stages: [
+      {
+        title: 'You click Delete and read what will be hidden',
+        detail:
+          'The confirmation asks the API first and says how many questions (and how many are awaiting review), how many users lose access and how many technologies will be archived. A deleted department appears under Deleted departments with a Restore button.',
+        where: 'web · features/admin/AdminDepartmentsPage.tsx',
+      },
+      {
+        title: 'React asks for the impact, then deletes',
+        detail: (
+          <>
+            <Code>GET /api/admin/clients/:id/impact</Code> fills the dialog;{' '}
+            <Code>DELETE /api/admin/clients/:id</Code> does it. Restore is{' '}
+            <Code>POST /api/admin/clients/:id/restore</Code>.
+          </>
+        ),
+        where: 'web · features/admin/hooks.ts, api.ts',
+      },
+      {
+        title: 'The request passes the gates',
+        detail: 'Admin only, for the whole /admin router.',
+        where: 'api · modules/admin/routes.ts',
+        checks: [
+          SESSION,
+          { text: 'You are an Admin.', fail: '403 FORBIDDEN' },
+          { text: 'The id is a UUID.', fail: '400 VALIDATION_ERROR' },
+        ],
+      },
+      {
+        title: 'Work out what only this department used',
+        detail:
+          'A technology is exclusive when no other live department uses it. Those are archived with the same timestamp as the deletion, so a restore can tell which ones this deletion archived and leaves anything archived earlier by hand alone.',
+        where: 'api · modules/admin/service.ts → deleteClient(), restoreClient()',
+        checks: [
+          { text: 'The department exists and is not already deleted.', fail: '404 NOT_FOUND' },
+        ],
+      },
+      {
+        title: 'Database: the questions are not touched at all',
+        detail:
+          'The visibility predicate already hides questions of a deleted department from everyone, so the delete only has to mark the department.',
+        where: 'api · modules/admin/service.ts',
+        rows: [
+          {
+            table: 'tag',
+            action: 'UPDATE',
+            row: 'archived_at = the deletion time, for technologies only this department used',
+          },
+          {
+            table: 'client',
+            action: 'UPDATE',
+            row: 'deleted_at = now (restore sets it back to null)',
+          },
+          {
+            table: 'audit_event',
+            action: 'INSERT',
+            row: 'CLIENT_DELETED, or CLIENT_RESTORED on the way back',
           },
         ],
       },

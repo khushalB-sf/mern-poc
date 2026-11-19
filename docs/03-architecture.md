@@ -66,17 +66,40 @@ Base path `/api`. JSON only. All routes except `login`, `refresh`, `logout`, `he
 |---|---|---|---|---|---|
 | GET | `/health` | liveness + DB ping | none | 200 `{status:"ok"}` | 503 |
 | GET | `/docs`, `/openapi.json` | Swagger UI and the OpenAPI 3.1 spec (contract only, no data); on unless `DOCS_ENABLED=false` | none | 200 | |
-| POST | `/auth/login` | email + password → cookies | none; rate-limited 5/min per IP+email | 200 `{user}` + 2 cookies | 400, 401 (same body for bad email/password), 429 |
-| POST | `/auth/refresh` | rotate refresh token → new cookies | refresh cookie | 204 + cookies | 401 (reuse revokes family) |
+| POST | `/auth/login` | email + password → cookies | none; rate-limited 5/min per IP+email and 30/min per IP | 200 `{user}` + 2 cookies | 400, 401 (same body for bad email/password), 429 |
+| POST | `/auth/refresh` | rotate refresh token → new cookies | refresh cookie; 30/min per IP | 204 + cookies | 401 (reuse revokes family) |
 | POST | `/auth/logout` | revoke family, clear cookies | refresh cookie (idempotent) | 204 | |
 | GET | `/auth/me` | current user `{id,name,email,role}` | access cookie | 200 | 401 |
-| GET | `/tags` | categories with values (non-sensitive, global) | authenticated | 200 `{categories:[{slug,name,tags:[{value,label}]}]}` | 401 |
-| GET | `/clients` | clients the **caller** is granted | authenticated | 200 `{items}` (only granted) | 401 |
+| GET | `/tags` | categories with values; `?for=filter` narrows Technology to the caller's departments and drops archived | authenticated | 200 `{categories:[{slug,name,tags:[{value,label,archived,other?}]}]}` | 401 |
+| GET | `/clients` | departments the **caller** is granted, each with its active technology values | authenticated | 200 `{items:[{id,name,technologies}]}` (only granted) | 401 |
 | GET | `/questions` | search + filter, paginated | authenticated; visibility in SQL | 200 `{items,page}` | 400, 401, 429 |
 | GET | `/questions/:id` | one question | visibility in SQL; invisible ≡ nonexistent | 200 | 400 (bad uuid), 401, **404** |
 | GET | `/questions/:id/history` | audit events for the question | visible first, then 404 otherwise | 200 `{items}` | 401, **404** |
-| POST | `/questions` | create | role AUTHOR/REVIEWER; client grant if `clientId` | 201 | 400, 401, 403 (role), 404 (unknown/ungranted client, identical), **409 duplicate** |
+| POST | `/questions` | create | role AUTHOR/ADMIN; grant if `clientId`; a department question may only use its department's technologies | 201 | 400, 401, 403 (role), 404 (unknown/ungranted client, identical), **409 duplicate** |
 | PATCH | `/questions/:id` | partial edit | visible → else 404; then AUTHOR owns it or REVIEWER; else 403 | 200 | 400, 401, 403, 404 |
+
+| DELETE | `/questions/:id` | soft delete (history kept) | ADMIN; visibility first | 204 | 401, 403, 404 |
+| POST | `/questions/:id/review` | approve or reject with a note | REVIEWER (pending, not own) or ADMIN; visibility first | 200 `{question}` | 400, 403, 404, **409 NOT_PENDING** |
+
+**Admin routes** (`/admin/*`; every one is ADMIN-only, enforced once for the whole router; 429 after 120/min per user, shared with `/tags` and `/clients`):
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET / POST | `/admin/users` | list (`?deleted=true` for deleted ones) / create with an initial password |
+| PATCH / DELETE | `/admin/users/:id` | edit name, email, role, active, password / soft delete (409 `LAST_ADMIN` if it would leave no active admin) |
+| POST | `/admin/users/:id/restore` | restore a deleted user, **inactive** until an admin activates them |
+| PUT | `/admin/users/:id/clients` | replace the departments a user may see |
+| GET / POST | `/admin/clients` | list (`?deleted=true`) / create a department |
+| PATCH / DELETE | `/admin/clients/:id` | edit / soft delete (archives technologies only it used) |
+| GET | `/admin/clients/:id/impact` | what a delete would hide: questions, pending, users, technologies |
+| POST | `/admin/clients/:id/restore` | restore (brings back the technologies that delete archived) |
+| GET / POST | `/admin/clients/:id/technologies` | the department's active, archived and addable technologies / add (links an existing name or creates) |
+| DELETE / POST | `/admin/clients/:id/technologies/:tagId[/restore]` | remove (unlink if shared, archive if exclusive) / restore |
+| PATCH | `/admin/technologies/:id` | rename (label only) |
+| GET | `/admin/technologies/other` | technologies no live department uses ("Other") |
+| POST | `/admin/technologies/:id/archive` and `/restore` | archive or restore an "Other" technology |
+| GET | `/admin/deleted-questions` | deleted questions, newest first (limit 100) |
+| POST | `/admin/questions/:id/restore` | restore (409 `DEPARTMENT_DELETED` while its department is deleted) |
 
 **Why 403 vs 404 order on PATCH:** visibility first. A `USER`/other-author editing a *visible* question gets 403 (they know it exists, no leak). Any edit of an *invisible* question gets 404, same as a random ID.
 

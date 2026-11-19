@@ -6,7 +6,7 @@ import { ZodError, z } from 'zod';
 import { originCheck } from '../src/http/csrf.js';
 import { AppError, errorHandler } from '../src/http/errors.js';
 import { rejectNul } from '../src/http/nul.js';
-import { keyOf, slugOf } from '../src/modules/admin/technologies.js';
+import { hasLetterOrDigit, keyOf, slugOf } from '../src/modules/admin/technologies.js';
 import { equaliseTiming, hashPassword, verifyPassword } from '../src/modules/auth/password.js';
 import {
   hashToken,
@@ -145,20 +145,54 @@ describe('rejectNul', () => {
 });
 
 describe('technology names', () => {
-  it('keyOf treats case and punctuation as the same technology', () => {
+  it('keyOf ignores case, spaces, dots, dashes and underscores, and nothing else', () => {
     for (const v of ['Node.js', 'node-js', 'NODEJS', ' node js ', 'node_js'])
       expect(keyOf(v)).toBe('nodejs');
-    expect(keyOf('C++')).toBe('c');
-    expect(keyOf('+++')).toBe('');
-    expect(keyOf('Ünïcode')).toBe('ncode'); // non-ASCII letters are dropped, not matched fuzzily
+    expect(keyOf('Ünïcode')).toBe('ünïcode');
+    expect(keyOf('日本語')).toBe('日本語');
   });
-  it('slugOf makes URL- and tag-safe values', () => {
+
+  it('keyOf keeps the symbols that make names different: C, C++ and C# are three technologies', () => {
+    const keys = ['C', 'C++', 'C#', 'F#', '.NET', 'Net'].map(keyOf);
+    expect(keys).toEqual(['c', 'c++', 'c#', 'f#', 'net', 'net']);
+    expect(new Set(keys.slice(0, 4)).size).toBe(4);
+  });
+
+  it('keyOf treats composed and decomposed accents as the same name', () => {
+    expect(keyOf('Caf\u00e9')).toBe(keyOf('Cafe\u0301'));
+  });
+
+  it('hasLetterOrDigit rejects names made only of punctuation or symbols', () => {
+    for (const v of ['+++', '###', ' - ', '.', '😀']) expect(hasLetterOrDigit(v)).toBe(false);
+    for (const v of ['C++', 'Go', '日本語', 'Ü', '3D']) expect(hasLetterOrDigit(v)).toBe(true);
+  });
+
+  it('slugOf makes URL- and tag-safe ASCII values', () => {
     expect(slugOf('Apache Spark')).toBe('apache-spark');
     expect(slugOf(' Node.js ')).toBe('node-js');
     expect(slugOf('--A--B--')).toBe('a-b');
     expect(slugOf('Go!')).toBe('go');
-    expect(slugOf('😀')).toBe('');
     expect(slugOf("'; DROP TABLE tag; --")).toBe('drop-table-tag');
+  });
+
+  it('slugOf spells out symbols and drops accents, so distinct names get distinct values', () => {
+    expect(slugOf('C++')).toBe('c-plus-plus');
+    expect(slugOf('C#')).toBe('c-sharp');
+    expect(slugOf('F#')).toBe('f-sharp');
+    expect(slugOf('Café')).toBe('cafe');
+    expect(new Set(['C', 'C++', 'C#'].map(slugOf)).size).toBe(3);
+  });
+
+  it('slugOf always yields a valid, stable value, even for names with no Latin letters', () => {
+    for (const v of ['日本語', '😀', 'Привет']) {
+      expect(slugOf(v)).toMatch(/^tech-[0-9a-f]{8}$/);
+      expect(slugOf(v)).toBe(slugOf(v)); // deterministic
+    }
+    expect(slugOf('日本語')).not.toBe(slugOf('Привет'));
+    // every result is accepted by the tag grammar the API enforces
+    for (const v of ['C++', 'Café', '日本語', 'Node.js', 'a b c']) {
+      expect(`technology:${slugOf(v)}`).toMatch(/^[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9.-]*$/);
+    }
   });
 });
 

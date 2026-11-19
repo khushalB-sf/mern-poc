@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
 import { notFound } from '../../http/errors.js';
+import { perUserLimit } from '../../http/rateLimit.js';
 import { validateBody, validateParams, validateQuery } from '../../http/validate.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import { resolveTagGroups, tagListParam, tagString } from '../tags/tags.js';
@@ -70,22 +70,7 @@ export const reviewSchema = z
 export function questionRoutes(db: Db, config: Config) {
   const router = Router();
   router.use(requireAuth(db, config));
-  // ponytail: in-memory, per process. Rate-limit headers are off on purpose: a decrementing
-  // `RateLimit-Remaining` would make hidden and genuinely-empty search responses differ (SEC-04).
-  router.use(
-    rateLimit({
-      windowMs: 60_000,
-      limit: config.RATE_LIMIT_API_PER_MIN,
-      standardHeaders: false,
-      legacyHeaders: false,
-      keyGenerator: (req) => req.user!.id,
-      handler: (_req, res) => {
-        res
-          .status(429)
-          .json({ error: { code: 'RATE_LIMITED', message: 'Too many requests, slow down' } });
-      },
-    }),
-  );
+  router.use(perUserLimit(config.RATE_LIMIT_API_PER_MIN));
 
   router.get('/', validateQuery(searchSchema), async (req, res) => {
     const f = res.locals.query as z.infer<typeof searchSchema>;

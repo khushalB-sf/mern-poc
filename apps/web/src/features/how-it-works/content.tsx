@@ -43,6 +43,14 @@ export const ROLE_ROWS: { action: string; cells: RoleCells }[] = [
   { action: 'Add, edit or delete a department', cells: ['no', 'no', 'no', 'yes'] },
   { action: 'Move a question to another department', cells: ['no', 'no', 'no', 'no'] },
   { action: 'Delete a question (hidden, history kept)', cells: ['no', 'no', 'no', 'yes'] },
+  {
+    action: 'Restore a deleted question, department or user',
+    cells: ['no', 'no', 'no', 'yes'],
+  },
+  {
+    action: 'Add, rename, remove or restore a department’s technologies',
+    cells: ['no', 'no', 'no', 'yes'],
+  },
 ];
 
 export const DECISION_STEPS: FlowStep[] = [
@@ -95,15 +103,18 @@ export const PIPELINE: FlowStep[] = [
     detail: (
       <>
         <Code>pino-http</Code> makes its own request ID (returned as <Code>X-Request-Id</Code>) and
-        redacts cookies and auth headers from the logs.
+        redacts cookies and auth headers from the logs. The client address comes from{' '}
+        <Code>X-Forwarded-For</Code> only for the proxy hops named in <Code>TRUST_PROXY</Code>.
       </>
     ),
   },
   {
-    title: 'Security headers',
+    title: 'Security headers and no caching',
     detail: (
       <>
-        <Code>helmet</Code> sets the standard hardening headers.
+        <Code>helmet</Code> sets the standard hardening headers, and every <Code>/api</Code>{' '}
+        response carries <Code>Cache-Control: no-store</Code>, so per-user data is never kept by a
+        browser or a shared cache.
       </>
     ),
   },
@@ -119,6 +130,16 @@ export const PIPELINE: FlowStep[] = [
         <Code>cookie-parser</Code> exposes the httpOnly <Code>access_token</Code> cookie.
       </>
     ),
+  },
+  {
+    title: 'NUL-byte gate',
+    detail: (
+      <>
+        Postgres cannot store a NUL character, so any string in the body or query that contains one
+        is refused here instead of becoming a database error.
+      </>
+    ),
+    fail: '400 VALIDATION_ERROR',
   },
   {
     title: 'Origin check (second CSRF layer)',
@@ -141,11 +162,13 @@ export const PIPELINE: FlowStep[] = [
     fail: '401 UNAUTHENTICATED',
   },
   {
-    title: 'Rate limit, per user',
+    title: 'Rate limits',
     detail: (
       <>
-        120 requests a minute by default. Rate-limit headers are switched off on purpose, so a
-        hidden search result cannot be told apart from a genuinely empty one.
+        120 requests a minute by default for the questions API, and a separate 120 a minute shared
+        by tags, departments and the admin pages. Refreshing or ending a session is limited per
+        address. Rate-limit headers are switched off on purpose, so a hidden search result cannot be
+        told apart from a genuinely empty one.
       </>
     ),
     fail: '429 RATE_LIMITED',
@@ -407,13 +430,13 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
   {
     name: 'app_user',
     purpose: 'Accounts. One global role: USER, AUTHOR, REVIEWER or ADMIN.',
-    keys: 'email unique · active flag',
+    keys: 'email unique · active flag · deleted_at',
   },
   {
     name: 'client',
     purpose:
       'The departments that can own restricted questions (MERN, MEAN, Python, AI-ML, Data Engineering, DevOps).',
-    keys: 'name unique',
+    keys: 'name unique · deleted_at (soft delete, an admin can restore)',
   },
   {
     name: 'client_grant',
@@ -424,12 +447,18 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
     name: 'question',
     purpose:
       'Text, answer notes, author, optional department, review status and the reviewer’s note.',
-    keys: 'client_id set at creation, never changed · no unique on text · full-text and trigram indexes',
+    keys: 'client_id set at creation, never changed · deleted_at · no unique on text · full-text and trigram indexes',
   },
   {
     name: 'tag_category · tag',
-    purpose: 'The fixed taxonomy: technology, seniority, question type.',
-    keys: 'seeded, not user-created',
+    purpose: 'The fixed categories: technology, seniority, question type.',
+    keys: 'archived_at on a tag hides it from pickers and filters but keeps it on old questions',
+  },
+  {
+    name: 'client_tag',
+    purpose:
+      'Which technologies a department offers. Many-to-many: Node.js can sit under MERN and MEAN.',
+    keys: 'PK (client_id, tag_id) · a technology with no department is shown as “Other”',
   },
   {
     name: 'question_tag',
@@ -438,7 +467,8 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
   },
   {
     name: 'audit_event',
-    purpose: 'Who did what and when: created, updated, duplicate rejected, duplicate overridden.',
+    purpose:
+      'Who did what and when: question created, edited, reviewed, deleted or restored; department and technology changes; duplicate rejected or overridden.',
     keys: 'question_id is null for a rejected duplicate · JSON payload',
   },
   {
@@ -449,18 +479,24 @@ export const TABLES: { name: string; purpose: string; keys: string }[] = [
 ];
 
 export const VISIBLE_SQL = `-- the visibility predicate, appended to every read of "question"
-q.client_id IS NULL
-OR EXISTS (
-  SELECT 1 FROM client_grant g
-  WHERE g.user_id = $actor AND g.client_id = q.client_id
-)`;
+q.deleted_at IS NULL                        -- soft-deleted: gone for everyone
+AND department is not deleted
+-- Admins stop here. Everyone else also needs:
+AND ( q.client_id IS NULL                   -- global, or a grant:
+      OR EXISTS (SELECT 1 FROM client_grant g
+                 WHERE g.user_id = $actor AND g.client_id = q.client_id) )
+AND CASE role                               -- and a status their role may read:
+      WHEN READ-ONLY THEN status = 'APPROVED'
+      WHEN AUTHOR    THEN status = 'APPROVED' OR author = $actor
+      WHEN REVIEWER  THEN true END`;
 
 export const STATUS_ROWS: { status: string; code: string; from: string; meaning: string }[] = [
   {
     status: '400',
     code: 'VALIDATION_ERROR',
     from: 'Zod validation',
-    meaning: 'Wrong shape, a field that is not allowed, or an unknown tag.',
+    meaning:
+      'Wrong shape, a field that is not allowed, an unknown or archived tag, a technology that is not one of the department’s, or a NUL character.',
   },
   {
     status: '401',
@@ -490,10 +526,24 @@ export const STATUS_ROWS: { status: string; code: string; from: string; meaning:
       'A very similar question already exists. Send it again with confirmNotDuplicate to override.',
   },
   {
+    status: '409',
+    code: 'LAST_ADMIN · NOT_PENDING · DEPARTMENT_DELETED',
+    from: 'The services',
+    meaning:
+      'The last active admin cannot be removed, a question was already reviewed, or its department must be restored first.',
+  },
+  {
+    status: '413',
+    code: 'PAYLOAD_TOO_LARGE',
+    from: 'The JSON parser',
+    meaning: 'The request body is over 100 kB.',
+  },
+  {
     status: '429',
     code: 'RATE_LIMITED',
     from: 'Rate limit',
-    meaning: 'Too many requests from this account in a minute.',
+    meaning:
+      'Too many requests from this account in a minute, or too many sign-in attempts from this address.',
   },
   {
     status: '500',
@@ -567,6 +617,25 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [{ text: 'Updates question' }, { text: 'Audit event holds the diff' }],
       },
       {
+        title: 'Review',
+        leaves: [{ text: 'Row lock, then the decision' }, { text: 'Audit event holds the note' }],
+      },
+      {
+        title: 'Department technologies',
+        leaves: [
+          { text: 'Links or creates a technology' },
+          { text: 'Existing questions untouched' },
+        ],
+      },
+      {
+        title: 'Delete a department',
+        leaves: [
+          { text: 'Hides it, erases nothing' },
+          { text: 'Archives technologies only it used' },
+          { text: 'Restore undoes exactly that' },
+        ],
+      },
+      {
         title: 'Stay signed in',
         leaves: [{ text: 'Marks the old token used' }, { text: 'Writes the next token' }],
       },
@@ -604,7 +673,9 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'See, add, edit and delete any question' },
           { text: 'Add, edit and delete users and reviewers' },
-          { text: 'Add, edit and delete departments' },
+          { text: 'Add, edit, delete and restore departments' },
+          { text: 'Manage each department’s technologies' },
+          { text: 'Restore deleted questions' },
         ],
       },
       {
@@ -720,8 +791,9 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         title: 'Hardening',
         leaves: [
           { text: 'Request id, redacted logs' },
-          { text: 'helmet security headers' },
+          { text: 'helmet headers, no-store caching' },
           { text: 'JSON body capped at 100 kb' },
+          { text: 'NUL-byte gate' },
           { text: 'Origin check against CSRF' },
         ],
       },
@@ -790,7 +862,12 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       },
       {
         title: 'Content',
-        leaves: [{ text: 'question' }, { text: 'question_tag' }, { text: 'tag and tag_category' }],
+        leaves: [
+          { text: 'question' },
+          { text: 'question_tag' },
+          { text: 'tag and tag_category' },
+          { text: 'client_tag: department technologies' },
+        ],
       },
       { title: 'Audit', leaves: [{ text: 'audit_event: who, what, when' }] },
       {
@@ -842,6 +919,130 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'Same error for every failure' },
           { text: 'Rate-limited per address and email' },
+          { text: 'And per address across all emails' },
+        ],
+      },
+    ],
+  },
+  approach: {
+    center: 'Approach',
+    branches: [
+      {
+        title: 'Access',
+        tone: 'restricted',
+        leaves: [
+          { text: 'Visibility rule in the SQL' },
+          { text: 'Hidden looks like missing (404)' },
+          { text: 'Role checked second' },
+        ],
+      },
+      {
+        title: 'Code shape',
+        leaves: [
+          { text: 'Route, service, repository' },
+          { text: 'Strict Zod validation' },
+          { text: 'One error handler' },
+        ],
+      },
+      {
+        title: 'Data',
+        leaves: [
+          { text: 'Review workflow and audit' },
+          { text: 'Soft delete and restore' },
+          { text: 'Technologies per department' },
+          { text: 'Search and duplicates in Postgres' },
+        ],
+      },
+      {
+        title: 'Sessions',
+        leaves: [{ text: 'httpOnly cookies' }, { text: 'Rotating refresh tokens' }],
+      },
+      {
+        title: 'Frontend and deploy',
+        leaves: [
+          { text: 'URL is the state' },
+          { text: 'One origin behind nginx' },
+          { text: 'Validated config, loopback ports' },
+        ],
+      },
+    ],
+  },
+  security: {
+    center: 'Security',
+    branches: [
+      {
+        title: 'Prevent',
+        leaves: [
+          { text: 'Access control in SQL' },
+          { text: 'Strict input validation' },
+          { text: 'Cookies, CSRF, CSP' },
+          { text: 'Safe defaults' },
+        ],
+      },
+      {
+        title: 'Limit',
+        leaves: [
+          { text: 'Rate limits per IP and email' },
+          { text: 'Body size cap' },
+          { text: 'Last admin protected' },
+        ],
+      },
+      {
+        title: 'Detect',
+        leaves: [
+          { text: 'Audit events' },
+          { text: 'Redacted structured logs' },
+          { text: 'Refresh reuse revokes the session' },
+        ],
+      },
+      {
+        title: 'Prove',
+        leaves: [
+          { text: 'Attack tests that failed first' },
+          { text: 'Route sweep and architecture guard' },
+          { text: 'Written security review' },
+        ],
+      },
+    ],
+  },
+  practices: {
+    center: 'Engineering practices',
+    branches: [
+      {
+        title: 'Testing',
+        leaves: [
+          { text: 'Unit tests for pure logic' },
+          { text: 'Integration on a real database' },
+          { text: 'UI tests by role and name' },
+          { text: 'About 99% API coverage' },
+        ],
+      },
+      {
+        title: 'TDD and red team',
+        leaves: [
+          { text: 'Test first, then the fix' },
+          { text: 'Known gaps documented as tests' },
+          { text: 'Bugs become regression tests' },
+        ],
+      },
+      {
+        title: 'Quality',
+        leaves: [
+          { text: 'TypeScript, ESLint, Prettier' },
+          { text: 'No speculative abstractions' },
+          { text: 'Contract generated from schemas' },
+        ],
+      },
+      {
+        title: 'Accessibility',
+        leaves: [{ text: 'Semantic HTML first' }, { text: 'axe in the tests' }],
+      },
+      {
+        title: 'Delivery',
+        leaves: [
+          { text: 'Branch per ticket, small commits' },
+          { text: 'Committed migrations, seeded demo data' },
+          { text: 'Docs and ADRs kept in step' },
         ],
       },
     ],

@@ -3,6 +3,7 @@ import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
+import { perIpLimit } from '../../http/rateLimit.js';
 import { validateBody } from '../../http/validate.js';
 import { REFRESH_COOKIE, clearAuthCookies, setAuthCookies } from './cookies.js';
 import { requireAuth } from './middleware.js';
@@ -50,13 +51,16 @@ export function authRoutes(db: Db, config: Config) {
     res.json({ user });
   });
 
-  router.post('/refresh', async (req, res) => {
+  // No user is known yet when these are called, so the allowance is per client address.
+  const sessionLimit = perIpLimit(config.RATE_LIMIT_AUTH_PER_MIN);
+
+  router.post('/refresh', sessionLimit, async (req, res) => {
     const { access, refresh } = await service.refresh(req.cookies?.[REFRESH_COOKIE]);
     setAuthCookies(res, config, access, refresh);
     res.status(204).end();
   });
 
-  router.post('/logout', async (req, res) => {
+  router.post('/logout', sessionLimit, async (req, res) => {
     await service.logout(req.cookies?.[REFRESH_COOKIE]);
     clearAuthCookies(res, config);
     res.status(204).end();

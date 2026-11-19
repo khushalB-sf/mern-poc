@@ -36,6 +36,10 @@ const schema = z.object({
   TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
   // Per authenticated user, across the questions API (search is debounced in the UI, so this is generous).
   RATE_LIMIT_API_PER_MIN: z.coerce.number().int().min(1).default(120),
+  // Per authenticated user, shared by everything else behind sign-in: /tags, /clients and /admin/*.
+  RATE_LIMIT_OTHER_PER_MIN: z.coerce.number().int().min(1).default(120),
+  // Per client IP, for /auth/refresh and /auth/logout (no user is known yet when they are called).
+  RATE_LIMIT_AUTH_PER_MIN: z.coerce.number().int().min(1).default(30),
   // Serves Swagger UI at /api/docs and the spec at /api/openapi.json (public: it describes the contract only).
   // Default: on except in production, so a deployment does not publish its API contract by accident.
   DOCS_ENABLED: bool.optional(),

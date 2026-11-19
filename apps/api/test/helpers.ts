@@ -18,6 +18,8 @@ export const testEnv = {
   JWT_REFRESH_SECRET: 'b'.repeat(32),
   RATE_LIMIT_LOGIN_PER_MIN: '1000',
   RATE_LIMIT_LOGIN_IP_PER_MIN: '100000',
+  RATE_LIMIT_OTHER_PER_MIN: '100000',
+  RATE_LIMIT_AUTH_PER_MIN: '100000',
 };
 
 export const testConfig = (over: Record<string, string> = {}): Config =>
@@ -176,6 +178,7 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['post', '/api/admin/users'],
   ['patch', `/api/admin/users/${UUID}`],
   ['delete', `/api/admin/users/${UUID}`],
+  ['post', `/api/admin/users/${UUID}/restore`],
   ['put', `/api/admin/users/${UUID}/clients`],
   ['get', '/api/admin/clients'],
   ['post', '/api/admin/clients'],
