@@ -8,8 +8,21 @@ import type {
   DepartmentTechnologies,
 } from '../../shared/api/types';
 
-export const listAdminUsers = (signal?: AbortSignal) =>
-  apiFetch<{ items: AdminUser[] }>('/admin/users', { signal }).then((r) => r.items);
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+/** A search and a cursor become the query string; nothing is sent for what is empty. */
+const listQuery = (params: Record<string, string | undefined>) => {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) sp.set(k, v);
+  const q = sp.toString();
+  return q ? `?${q}` : '';
+};
+
+export const listAdminUsers = (q: string, cursor: string | undefined, signal?: AbortSignal) =>
+  apiFetch<Page<AdminUser>>(`/admin/users${listQuery({ q, cursor })}`, { signal });
 
 export interface NewUser {
   name: string;
@@ -75,10 +88,8 @@ export const getDepartmentImpact = (id: string, signal?: AbortSignal) =>
 export const restoreDepartment = (id: string) =>
   apiFetch<{ client: Department }>(`/admin/clients/${id}/restore`, { method: 'POST' });
 
-export const listDeletedQuestions = (signal?: AbortSignal) =>
-  apiFetch<{ items: DeletedQuestion[] }>('/admin/deleted-questions', { signal }).then(
-    (r) => r.items,
-  );
+export const listDeletedQuestions = (cursor: string | undefined, signal?: AbortSignal) =>
+  apiFetch<Page<DeletedQuestion>>(`/admin/deleted-questions${listQuery({ cursor })}`, { signal });
 
 export const restoreQuestion = (id: string) =>
   apiFetch<void>(`/admin/questions/${id}/restore`, { method: 'POST' });
@@ -111,10 +122,77 @@ export const setOtherTechnologyArchived = ({ id, archived }: { id: string; archi
     method: 'POST',
   });
 
-export const listDeletedUsers = (signal?: AbortSignal) =>
-  apiFetch<{ items: AdminUser[] }>('/admin/users?deleted=true', { signal }).then((r) => r.items);
+export const listDeletedUsers = (cursor: string | undefined, signal?: AbortSignal) =>
+  apiFetch<Page<AdminUser>>(`/admin/users${listQuery({ deleted: 'true', cursor })}`, { signal });
 
 export const restoreUser = (id: string) =>
   apiFetch<{ user: AdminUser }>(`/admin/users/${id}/restore`, { method: 'POST' }).then(
     (r) => r.user,
   );
+
+export const createResetLink = (id: string) =>
+  apiFetch<{ token: string; expiresAt: string }>(`/admin/users/${id}/reset-link`, {
+    method: 'POST',
+  });
+
+export const resetMfa = (id: string) =>
+  apiFetch<void>(`/admin/users/${id}/mfa-reset`, { method: 'POST' });
+
+export interface AuditEvent {
+  id: string;
+  type: string;
+  at: string;
+  actor: { id: string; name: string };
+  questionId: string | null;
+  payload: Record<string, unknown>;
+}
+export interface AuditFilters {
+  type?: string;
+  from?: string;
+  to?: string;
+}
+
+const auditQuery = (f: AuditFilters) => {
+  const sp = new URLSearchParams();
+  if (f.type) sp.set('type', f.type);
+  if (f.from) sp.set('from', f.from);
+  if (f.to) sp.set('to', f.to);
+  return sp;
+};
+export const auditExportUrl = (f: AuditFilters) => {
+  const q = auditQuery(f).toString();
+  return `/api/admin/audit/export${q ? `?${q}` : ''}`;
+};
+export const listAudit = (f: AuditFilters, cursor: string | undefined, signal?: AbortSignal) => {
+  const sp = new URLSearchParams({ limit: '50' });
+  for (const [k, v] of auditQuery(f)) sp.set(k, v);
+  if (cursor) sp.set('cursor', cursor);
+  return apiFetch<{ items: AuditEvent[]; nextCursor: string | null }>(`/admin/audit?${sp}`, {
+    signal,
+  });
+};
+
+export interface ManagedTag {
+  id: string;
+  value: string;
+  label: string;
+  archived: boolean;
+  questionCount: number;
+}
+export interface TagList {
+  slug: string;
+  name: string;
+  tags: ManagedTag[];
+}
+
+export const listTagCategories = (signal?: AbortSignal) =>
+  apiFetch<{ items: TagList[] }>('/admin/tag-categories', { signal }).then((r) => r.items);
+export const addTagToList = ({ slug, label }: { slug: string; label: string }) =>
+  apiFetch<{ tag: { id: string; label: string } }>(`/admin/tag-categories/${slug}/tags`, {
+    method: 'POST',
+    body: { label },
+  }).then((r) => r.tag);
+export const renameTag = ({ id, label }: { id: string; label: string }) =>
+  apiFetch<void>(`/admin/tags/${id}`, { method: 'PATCH', body: { label } });
+export const setTagArchived = ({ id, archived }: { id: string; archived: boolean }) =>
+  apiFetch<void>(`/admin/tags/${id}/${archived ? 'archive' : 'restore'}`, { method: 'POST' });

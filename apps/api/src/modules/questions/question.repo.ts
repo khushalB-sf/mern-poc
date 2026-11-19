@@ -8,7 +8,8 @@
  */
 import { Prisma } from '../../generated/prisma/client.js';
 import type { QuestionStatus, Role } from '../../generated/prisma/enums.js';
-import type { Db, Queryable } from '../../db/prisma.js';
+import type { Queryable } from '../../db/prisma.js';
+import { encodeCursor } from '../../http/cursor.js';
 import { AppError, notFound } from '../../http/errors.js';
 
 export interface Actor {
@@ -22,6 +23,8 @@ export interface SearchFilters {
   tagGroups: string[][];
   clientId?: string | undefined;
   status?: QuestionStatus | undefined;
+  /** Only questions the actor wrote (still limited to what they may see). */
+  mine?: boolean | undefined;
   limit: number;
   offset: number;
 }
@@ -140,6 +143,7 @@ export async function searchQuestions(db: Queryable, actor: Actor, f: SearchFilt
   const conditions = [visible(actor)];
   if (f.clientId) conditions.push(Prisma.sql`q.client_id = ${f.clientId}::uuid`);
   if (f.status) conditions.push(Prisma.sql`q.status = ${f.status}::"QuestionStatus"`);
+  if (f.mine) conditions.push(Prisma.sql`q.author_id = ${actor.id}::uuid`);
   if (f.q) {
     conditions.push(Prisma.sql`${SEARCH_VECTOR} @@ websearch_to_tsquery('english', ${f.q})`);
   }
@@ -182,28 +186,42 @@ export type SimilarQuestion = { id: string; text: string; similarity: number };
  * the actor cannot see are never compared, so they can never be hinted at.
  */
 export async function findSimilarQuestions(
-  db: Db,
+  db: Queryable,
   actor: Actor,
   text: string,
   threshold: number,
   limit = 5,
+  /** An edit is never a duplicate of the question being edited. */
+  excludeId?: string,
 ): Promise<SimilarQuestion[]> {
-  return db.$transaction(async (tx) => {
+  const run = async (tx: Queryable) => {
     // `%` uses pg_trgm.similarity_threshold; set it locally so the index prefilter matches our rule.
     await tx.$queryRaw`SELECT set_config('pg_trgm.similarity_threshold', ${String(threshold)}, true)`;
     // ponytail: the planner mis-estimates `%` selectivity and seq-scans (72 ms at 5k rows vs 6 ms via the
     // GIN index). Forcing the index is fine at POC scale; revisit with real statistics on a big table.
     await tx.$queryRaw`SELECT set_config('enable_seqscan', 'off', true)`;
-    const rows = await tx.$queryRaw<SimilarQuestion[]>`
+    const notSelf = excludeId ? Prisma.sql`AND q.id <> ${excludeId}::uuid` : Prisma.empty;
+    return tx.$queryRaw<SimilarQuestion[]>`
       SELECT q.id, q."text", similarity(${NORMALISED_TEXT}, ${normalised(text)})::float8 AS similarity
       FROM question q
       WHERE ${visible(actor)}
+        ${notSelf}
         AND ${NORMALISED_TEXT} % ${normalised(text)}
         AND similarity(${NORMALISED_TEXT}, ${normalised(text)}) >= ${threshold}::float4
       ORDER BY similarity DESC, q.id
       LIMIT ${limit}::int`;
-    return rows;
-  });
+  };
+  // set_config(..., true) lasts for one transaction: reuse the caller's, or open one for this query.
+  return '$transaction' in db ? db.$transaction(run) : run(db);
+}
+
+/**
+ * Serialises everything that writes the same (normalised) question text: two people saving the same
+ * question at once queue up here, so the second one sees the first one's row in its duplicate check.
+ * Held until the surrounding transaction ends.
+ */
+export async function lockQuestionText(tx: Queryable, text: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${normalised(text)}, 0))`;
 }
 
 export async function insertQuestion(
@@ -315,12 +333,26 @@ export async function globalTagIds(db: Queryable): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
-/** Admin only. Soft-deleted questions, newest deletion first, flagged when their department is also deleted. */
-export async function listDeletedQuestions(db: Queryable, limit = 100) {
+/**
+ * Admin only. Soft-deleted questions, newest deletion first, paged by a (deleted-at, id) cursor, flagged
+ * when their department is also deleted.
+ */
+export async function listDeletedQuestions(
+  db: Queryable,
+  f: { limit: number; cursor?: [string, string] | undefined },
+) {
+  const at = f.cursor ? new Date(f.cursor[0]) : null;
   const rows = await db.question.findMany({
-    where: { deletedAt: { not: null } },
-    orderBy: [{ deletedAt: 'desc' }, { id: 'asc' }],
-    take: limit,
+    where: {
+      deletedAt: { not: null },
+      ...(f.cursor &&
+        at &&
+        !Number.isNaN(at.getTime()) && {
+          OR: [{ deletedAt: { lt: at } }, { deletedAt: at, id: { lt: f.cursor[1] } }],
+        }),
+    },
+    orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+    take: f.limit + 1,
     select: {
       id: true,
       text: true,
@@ -330,16 +362,22 @@ export async function listDeletedQuestions(db: Queryable, limit = 100) {
       client: { select: { id: true, name: true, deletedAt: true } },
     },
   });
-  return rows.map((r) => ({
-    id: r.id,
-    text: r.text,
-    status: r.status,
-    deletedAt: r.deletedAt!,
-    author: r.author,
-    department: r.client ? { id: r.client.id, name: r.client.name } : null,
-    // Still hidden after a restore until its department is restored too.
-    departmentDeleted: r.client?.deletedAt != null,
-  }));
+  const page = rows.slice(0, f.limit);
+  const last = page.at(-1);
+  return {
+    items: page.map((r) => ({
+      id: r.id,
+      text: r.text,
+      status: r.status,
+      deletedAt: r.deletedAt!,
+      author: r.author,
+      department: r.client ? { id: r.client.id, name: r.client.name } : null,
+      // Still hidden after a restore until its department is restored too.
+      departmentDeleted: r.client?.deletedAt != null,
+    })),
+    nextCursor:
+      rows.length > f.limit && last ? encodeCursor([last.deletedAt!.toISOString(), last.id]) : null,
+  };
 }
 
 /** Admin only. Undoes softDeleteQuestion; refused while the question's department is deleted. */
@@ -371,13 +409,55 @@ export async function departmentImpact(db: Queryable, clientId: string) {
 }
 
 /** Number of live questions per tag; questions of a deleted department are hidden, so not counted. */
-export async function tagUsageCounts(db: Queryable): Promise<Map<string, number>> {
+export async function tagUsageCounts(
+  db: Queryable,
+  /** Count only these tags (an admin page showing one department needs no more): far less to scan. */
+  tagIds?: string[],
+): Promise<Map<string, number>> {
   const rows = await db.questionTag.groupBy({
     by: ['tagId'],
     where: {
+      ...(tagIds && { tagId: { in: tagIds } }),
       question: { deletedAt: null, OR: [{ clientId: null }, { client: { deletedAt: null } }] },
     },
     _count: { _all: true },
   });
   return new Map(rows.map((r) => [r.tagId, r._count._all]));
+}
+
+/**
+ * What is waiting for this person, counted through the same visibility rule as everything else, so a
+ * number can never reveal a question they may not see. `toReview`: pending questions a reviewer could
+ * decide (never their own; an admin may decide any). `mine`: their own questions by status.
+ */
+export async function reviewSummary(db: Queryable, actor: Actor) {
+  const rows = await db.$queryRaw<{ status: QuestionStatus; own: boolean; n: bigint }[]>`
+    SELECT t.status, t.own, count(*) AS n
+    FROM (
+      SELECT q.status, (q.author_id = ${actor.id}::uuid) AS own
+      FROM question q
+      WHERE ${visible(actor)}
+    ) t
+    GROUP BY t.status, t.own`;
+  const sum = (pick: (r: (typeof rows)[number]) => boolean) =>
+    rows.filter(pick).reduce((a, r) => a + Number(r.n), 0);
+  const canReview = actor.role === 'REVIEWER' || actor.role === 'ADMIN';
+  return {
+    toReview: canReview
+      ? sum((r) => r.status === 'PENDING' && (actor.role === 'ADMIN' || !r.own))
+      : 0,
+    mine: {
+      pending: sum((r) => r.own && r.status === 'PENDING'),
+      rejected: sum((r) => r.own && r.status === 'REJECTED'),
+      approved: sum((r) => r.own && r.status === 'APPROVED'),
+    },
+  };
+}
+
+/** The text of those of `ids` the actor may see: the rest are simply absent (so no existence oracle). */
+export async function visibleQuestionTexts(db: Queryable, actor: Actor, ids: string[]) {
+  if (ids.length === 0) return new Map<string, { id: string; text: string }>();
+  const rows = await db.$queryRaw<{ id: string; text: string }[]>`
+    SELECT q.id, q."text" FROM question q WHERE q.id = ANY(${ids}::uuid[]) AND ${visible(actor)}`;
+  return new Map(rows.map((r) => [r.id, r]));
 }

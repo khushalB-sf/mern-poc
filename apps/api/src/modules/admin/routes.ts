@@ -2,7 +2,13 @@ import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import type { Config } from '../../config/env.js';
 import type { Db } from '../../db/prisma.js';
-import { validateBody, validateParams } from '../../http/validate.js';
+import { stringIdCursor } from '../../http/cursor.js';
+import { validateBody, validateParams, validateQuery } from '../../http/validate.js';
+import { recordBase } from '../../http/metrics.js';
+import { auditRoutes } from './audit.js';
+import { addTag, listTagCategories, renameTag, setTagArchived } from './tags.js';
+import { createResetLink } from '../auth/credentials.js';
+import { createMfa } from '../auth/mfa.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import {
   clientImpact,
@@ -33,6 +39,21 @@ import {
 } from './technologies.js';
 
 const idParams = z.object({ id: z.uuid() });
+const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]{1,40}$/) });
+
+const userListQuery = z.strictObject({
+  deleted: z
+    .literal('true')
+    .transform(() => true)
+    .optional(),
+  q: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: stringIdCursor.optional(),
+});
+const deletedQuestionsQuery = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: stringIdCursor.optional(),
+});
 
 const role = z.enum(['USER', 'AUTHOR', 'REVIEWER', 'ADMIN']);
 const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
@@ -74,8 +95,19 @@ export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
   const router = Router();
   router.use(requireAuth(db, config), limit, requireRole('ADMIN'));
 
-  router.get('/users', async (req, res) => {
-    res.json({ items: await listUsers(db, { deleted: req.query.deleted === 'true' }) });
+  router.get('/users', validateQuery(userListQuery), async (_req, res) => {
+    res.json(await listUsers(db, res.locals.query as z.infer<typeof userListQuery>));
+  });
+
+  router.post('/users/:id/mfa-reset', validateParams(idParams), async (req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    await createMfa(db, config).adminReset(req.log, req.user!, id);
+    res.status(204).end();
+  });
+
+  router.post('/users/:id/reset-link', validateParams(idParams), async (req, res) => {
+    const { id } = res.locals.params as z.infer<typeof idParams>;
+    res.status(201).json(await createResetLink(db, req.log, req.user!, id));
   });
 
   router.post('/users/:id/restore', validateParams(idParams), async (req, res) => {
@@ -147,8 +179,50 @@ export function adminRoutes(db: Db, config: Config, limit: RequestHandler) {
     res.status(204).end();
   });
 
-  router.get('/deleted-questions', async (_req, res) => {
-    res.json({ items: await listDeletedQuestionsForAdmin(db) });
+  router.use('/audit', recordBase, auditRoutes(db));
+
+  router.get('/tag-categories', async (_req, res) => {
+    res.json({ items: await listTagCategories(db) });
+  });
+
+  router.post(
+    '/tag-categories/:slug/tags',
+    validateParams(slugParams),
+    validateBody(technologyBody),
+    async (req, res) => {
+      const { slug } = res.locals.params as z.infer<typeof slugParams>;
+      res.status(201).json({ tag: await addTag(db, req.log, req.user!, slug, req.body.label) });
+    },
+  );
+
+  router.patch(
+    '/tags/:id',
+    validateParams(idParams),
+    validateBody(technologyBody),
+    async (req, res) => {
+      const { id } = res.locals.params as z.infer<typeof idParams>;
+      res.json({ tag: await renameTag(db, req.log, req.user!, id, req.body.label) });
+    },
+  );
+
+  for (const [action, archived] of [
+    ['archive', true],
+    ['restore', false],
+  ] as const) {
+    router.post(`/tags/:id/${action}`, validateParams(idParams), async (req, res) => {
+      const { id } = res.locals.params as z.infer<typeof idParams>;
+      await setTagArchived(db, req.log, req.user!, id, archived);
+      res.status(204).end();
+    });
+  }
+
+  router.get('/deleted-questions', validateQuery(deletedQuestionsQuery), async (_req, res) => {
+    res.json(
+      await listDeletedQuestionsForAdmin(
+        db,
+        res.locals.query as z.infer<typeof deletedQuestionsQuery>,
+      ),
+    );
   });
 
   router.post('/questions/:id/restore', validateParams(idParams), async (req, res) => {

@@ -20,7 +20,7 @@ Attack suites: `apps/api/test/security.auth.test.ts`, `security.access.test.ts`,
 | R9 | Medium | Swagger (the whole API contract) defaulted to **on in production** | `D5` | **Fixed**: default is off when `NODE_ENV=production`; `.env.example` turns it on for the local demo |
 | R10 | Medium | Runtime dependency advisories: `body-parser` (high), `qs`, `fast-uri` | `npm audit` | **Fixed** with a non-forced `npm audit fix` (lockfile only); all tests re-run |
 | R11 | Low | nginx advertised its version and accepted unbounded request bodies | `nginx.conf` | **Fixed**: `server_tokens off`, `client_max_body_size 200k` (config verified with `nginx -t`) |
-| G1 | Medium | An **access token keeps working after logout** until it expires (up to 15 minutes): it is stateless and not tied to a session | `A3` (`it.fails`, flips green when fixed) | **Open, recommended** (see below) |
+| R12 | Medium | An access token kept working after logout until it expired (up to 15 minutes): it was stateless and not tied to a session | `A3 an access token dies with its session` (was `it.fails`) | **Fixed**: the token carries the session id (`sid`, the refresh-token family) and each request checks that session is still live, in the same query that loads the user |
 | G2 | Low | Remaining `npm audit` items are the Prisma CLI's transitive `deepmerge-ts`/`mysql2`/`@prisma/config`. `--force` would downgrade Prisma to 6 | `npm audit` | **Accepted**, re-check when Prisma 7 ships a patch |
 
 ## What I tried that did NOT work (verified secure, kept as regression tests)
@@ -49,22 +49,21 @@ Attack suites: `apps/api/test/security.auth.test.ts`, `security.access.test.ts`,
 
 ## Loopholes and the better approach (not coded, ranked)
 
-1. **G1 Session-bound access tokens (Medium).** Today logout, "sign out everywhere" and a stolen access token cannot be cut short. Better: put the refresh-family id in the access token as `sid` and check on each request that the family still has an unrevoked, unexpired refresh token (one indexed lookup, the user row is already loaded), or keep a per-user `sessions_valid_after` timestamp. Shorten the access TTL to 5 minutes. This touches every authenticated test helper, hence not done here.
-2. **Admin is one super-role (Medium).** Deleting a department, resetting passwords and promoting users need one account. Better: MFA (TOTP/WebAuthn) for admins, and a second approver (or at least an email notification) for destructive admin actions. The audit log already records them.
-3. **Audit log is writable by the app (Medium).** `audit_event` can be edited or deleted with the application's database role. Better: grant only `INSERT`/`SELECT`, or add a trigger that rejects `UPDATE`/`DELETE`; ship the stream to an external log store.
-4. **Review-queue flooding (Medium).** Any author can submit up to the API rate limit per minute, burying reviewers. Better: a per-author quota of pending questions and a daily cap, with the existing duplicate check as the first filter.
-5. **Passwords (Medium).** Length 8 is the only rule, and the demo password is public. Better: minimum 12, check against a breached-password list (k-anonymity API or a local list), force change on first login for admin-created accounts.
-6. **Rate limits are per process and in memory (Low until scaled out).** Better: a shared store (Redis) and `limit_req` in nginx for `/api/auth/` as a second layer.
-7. **Database hardening (Low).** Add `statement_timeout` (stops a pathological search holding a connection), `sslmode=require` if the database is ever off-host, a least-privilege database role for the API (no DDL), and row-level security later (deferred in ADR-005).
-8. **Retention (Low).** Expired refresh tokens are never purged (table grows); soft-deleted users keep their email forever. Better: a nightly purge job and an anonymisation step for erasure requests.
-9. **Container supply chain (Low).** `prisma` (CLI) is a runtime dependency only to run migrations. Better: run migrations from a separate build stage so the CLI and its vulnerable transitive packages are not in the runtime image.
-10. **CI (Low).** No pipeline yet. Better: run `npm test`, `npm audit --omit=dev`, lint and a secret scan on every push (the suites here run in about 40 seconds).
+1. **Admin is one super-role (Medium).** Deleting a department, resetting passwords and promoting users need one account. Better: MFA (TOTP/WebAuthn) for admins, and a second approver (or at least an email notification) for destructive admin actions. The audit log already records them.
+2. **Audit log is writable by the app (Medium).** `audit_event` can be edited or deleted with the application's database role. Better: grant only `INSERT`/`SELECT`, or add a trigger that rejects `UPDATE`/`DELETE`; ship the stream to an external log store.
+3. **Review-queue flooding (Medium).** Any author can submit up to the API rate limit per minute, burying reviewers. Better: a per-author quota of pending questions and a daily cap, with the existing duplicate check as the first filter.
+4. **Passwords (Medium).** Length 8 is the only rule, and the demo password is public. Better: minimum 12, check against a breached-password list (k-anonymity API or a local list), force change on first login for admin-created accounts.
+5. **Rate limits are per process and in memory (Low until scaled out).** Better: a shared store (Redis) and `limit_req` in nginx for `/api/auth/` as a second layer.
+6. **Database hardening (Low).** Add `statement_timeout` (stops a pathological search holding a connection), `sslmode=require` if the database is ever off-host, a least-privilege database role for the API (no DDL), and row-level security later (deferred in ADR-005).
+7. **Retention (Low).** Expired refresh tokens are never purged (table grows); soft-deleted users keep their email forever. Better: a nightly purge job and an anonymisation step for erasure requests.
+8. **Container supply chain (Low).** `prisma` (CLI) is a runtime dependency only to run migrations. Better: run migrations from a separate build stage so the CLI and its vulnerable transitive packages are not in the runtime image.
+9. **CI (Low).** No pipeline yet. Better: run `npm test`, `npm audit --omit=dev`, lint and a secret scan on every push (the suites here run in about 40 seconds).
 
 ## Test inventory and coverage
 
 | | Before | After |
 |---|---|---|
-| API tests | 278 | 456 (+1 expected-failure documenting G1) |
+| API tests | 278 | see `npm test -w @qb/api` |
 | Web tests | 156 | 172 |
 | API coverage (statements / branches, excluding seed, server entry, generated client) | not measured | 98.9% / 95.0% |
 | Web coverage (statements / branches) | not measured | 93.6% / 87.8% |

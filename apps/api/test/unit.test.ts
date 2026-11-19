@@ -15,17 +15,19 @@ import {
   verifyAccess,
   verifyRefresh,
 } from '../src/modules/auth/tokens.js';
+import { passwordProblem } from '../src/modules/auth/passwordPolicy.js';
 import { resolveTagIds } from '../src/modules/tags/tags.js';
 
 const SECRET = 's'.repeat(32);
 const U1 = '11111111-1111-4111-8111-111111111111';
 const U2 = '22222222-2222-4222-8222-222222222222';
 const U3 = '33333333-3333-4333-8333-333333333333';
+const SID = '44444444-4444-4444-8444-444444444444';
 
 describe('tokens', () => {
   it('round-trips an access token and refuses other secrets, issuers and algorithms', () => {
-    const t = signAccess(SECRET, U1);
-    expect(verifyAccess(SECRET, t)).toEqual({ userId: U1 });
+    const t = signAccess(SECRET, U1, SID);
+    expect(verifyAccess(SECRET, t)).toEqual({ userId: U1, sid: SID });
     expect(verifyAccess('x'.repeat(32), t)).toBeNull();
     expect(verifyAccess(SECRET, jwt.sign({}, SECRET, { subject: U1, issuer: 'other' }))).toBeNull();
     expect(
@@ -37,14 +39,14 @@ describe('tokens', () => {
   });
 
   it('refuses expired, malformed and empty tokens without throwing', () => {
-    expect(verifyAccess(SECRET, signAccess(SECRET, U1, -10))).toBeNull();
+    expect(verifyAccess(SECRET, signAccess(SECRET, U1, SID, -10))).toBeNull();
     for (const bad of ['', 'abc', 'a.b.c', 'null', '{}'])
       expect(verifyAccess(SECRET, bad)).toBeNull();
   });
 
   it('requires a UUID subject (it goes into a uuid column)', () => {
     for (const sub of ['abc', '1', "x' OR 1=1", U1.slice(1)]) {
-      expect(verifyAccess(SECRET, signAccess(SECRET, sub))).toBeNull();
+      expect(verifyAccess(SECRET, signAccess(SECRET, sub, SID))).toBeNull();
     }
   });
 
@@ -60,7 +62,7 @@ describe('tokens', () => {
         jwt.sign({}, SECRET, { subject: U1, issuer: 'interview-qb', jwtid: U2 }),
       ),
     ).toBeNull(); // no family
-    expect(verifyRefresh(SECRET, signAccess(SECRET, U1))).toBeNull(); // an access token is not a refresh token
+    expect(verifyRefresh(SECRET, signAccess(SECRET, U1, SID))).toBeNull(); // an access token is not a refresh token
   });
 
   it('hashToken is deterministic, hex, and different per token', () => {
@@ -315,5 +317,62 @@ describe('resolveTagIds rules (with a stand-in database)', () => {
       't1',
     ]);
     expect(await resolveTagIds(fake(tags, []), [])).toEqual([]);
+  });
+});
+
+describe('password policy', () => {
+  const ctx = { email: 'alice.author@example.com', name: 'Alice Author' };
+
+  it('accepts a long, unpredictable password', () => {
+    for (const p of [
+      'correct-horse-battery-staple',
+      'tr0ub4dor&3-and-more',
+      'plum 7 river 2 quiet 9',
+    ]) {
+      expect(passwordProblem(p, ctx)).toBeNull();
+    }
+  });
+
+  it('refuses short passwords', () => {
+    expect(passwordProblem('Short1!', ctx)).toMatch(/12 characters/);
+    expect(passwordProblem('a'.repeat(11), ctx)).toMatch(/12 characters/);
+  });
+
+  it('refuses well-known passwords however they are dressed up', () => {
+    for (const p of [
+      'password1234',
+      'Password123456',
+      'qwertyuiop12',
+      'iloveyou1234',
+      'Passw0rd!demo',
+      'welcome123456',
+      'LETMEINLETMEIN',
+    ]) {
+      expect(passwordProblem(p, ctx), p).toMatch(/common|guess/i);
+    }
+  });
+
+  it('refuses passwords built from the account email or name', () => {
+    expect(passwordProblem('alice.author-2026!', ctx)).toMatch(/email|name/i);
+    expect(passwordProblem('ILoveAlice-Author', ctx)).toMatch(/email|name/i);
+    expect(passwordProblem('my-name-is-author-1', ctx)).toMatch(/email|name/i);
+    // short parts of a name are ignored: "Al" would otherwise block half the dictionary
+    expect(passwordProblem('al-bo-1234-xyz-pqr', { email: 'al@x.dev', name: 'Al Bo' })).toBeNull();
+  });
+
+  it('refuses repeats and runs', () => {
+    for (const p of [
+      'aaaaaaaaaaaa',
+      '121212121212',
+      '123456789012',
+      'abcdefghijkl',
+      'abababababab',
+    ]) {
+      expect(passwordProblem(p, ctx), p).not.toBeNull();
+    }
+  });
+
+  it('works without a name or email', () => {
+    expect(passwordProblem('correct-horse-battery-staple', {})).toBeNull();
   });
 });

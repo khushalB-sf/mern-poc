@@ -1,3 +1,14 @@
+x-api-env: &api-env
+  NODE_ENV: production
+  # Inside the compose network the database host is the service name `db`, never localhost.
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+  SEED_PASSWORD: ${SEED_PASSWORD:-Passw0rd!demo}
+  # First admin: created once (forced to change the password at first sign-in) when no such user exists.
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
 services:
   db:
     image: postgres:17
@@ -16,6 +27,20 @@ services:
       timeout: 3s
       retries: 20
 
+  # One-shot job: apply migrations, optional demo seed, first admin. The API waits for it to succeed.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      SEED_ON_START: ${SEED_ON_START:-false}
+    restart: 'no'
+
   api:
     build:
       context: .
@@ -23,21 +48,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
-      NODE_ENV: production
+      <<: *api-env
       PORT: 4000
-      # Inside the compose network the database host is the service name `db`, never localhost.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      SEED_ON_START: ${SEED_ON_START:-false}
-      SEED_PASSWORD: ${SEED_PASSWORD:-Passw0rd!demo}
-      # nginx is the one proxy in front of the API, so trust exactly one X-Forwarded-For hop.
-      TRUST_PROXY: 1
+      # nginx is one proxy in front of the API, so trust one X-Forwarded-For hop. Behind the `tls` profile
+      # (Caddy -> nginx -> API) set TRUST_PROXY=2, or every client shares Caddy's address for rate limiting.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
       # Swagger is off unless asked for: set DOCS_ENABLED=true in .env for a local demo.
       DOCS_ENABLED: ${DOCS_ENABLED:-false}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      # /metrics answers only with this bearer token; unset means the endpoint is off.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      MFA_REQUIRED_FOR_ADMINS: ${MFA_REQUIRED_FOR_ADMINS:-false}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      # Shared rate-limit store for running more than one API process; blank keeps per-process counters.
+      REDIS_URL: ${REDIS_URL:-}
     ports:
       # Loopback only: the browser reaches the API through nginx; direct access bypasses its limits.
       - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
@@ -59,7 +88,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_SHOW_DEMO_ACCOUNTS: ${VITE_SHOW_DEMO_ACCOUNTS:-true}
+        VITE_SHOW_DEMO_ACCOUNTS: ${VITE_SHOW_DEMO_ACCOUNTS:-false}
     depends_on:
       api:
         condition: service_healthy
@@ -71,5 +100,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # Optional TLS terminator: `docker compose --profile tls up -d`. See deploy/Caddyfile.
+  caddy:
+    profiles: ['tls']
+    image: caddy:2
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - '${HTTP_HOST_PORT:-80}:80'
+      - '${HTTPS_HOST_PORT:-443}:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

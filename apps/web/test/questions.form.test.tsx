@@ -181,6 +181,7 @@ describe('edit question', () => {
       text: 'Reworded question',
       answerNotes: 'Token bucket.',
       tags: ['technology:react'],
+      expectedUpdatedAt: mine.updatedAt, // the version that was opened, so a concurrent edit is caught
     });
   });
 

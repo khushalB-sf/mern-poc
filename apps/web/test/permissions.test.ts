@@ -32,9 +32,16 @@ describe('UI permission mirrors (the API enforces the real rules)', () => {
     expect(canReview(user('AUTHOR'), pending)).toBe(false);
   });
 
-  it('delete: admin only', () => {
-    expect(
-      (['USER', 'AUTHOR', 'REVIEWER', 'ADMIN'] as Role[]).map((r) => canDelete(user(r))),
-    ).toEqual([false, false, false, true]);
+  it('delete: an admin anything; an author their own until it is approved; nobody else', () => {
+    const own = (status: string) => q({ status });
+    const other = q({ author: { id: 'other', name: 'Bob' }, status: 'PENDING' });
+    expect(canDelete(user('ADMIN', 'adm'), other)).toBe(true);
+    expect(canDelete(user('ADMIN', 'adm'), own('APPROVED'))).toBe(true);
+    expect(canDelete(user('AUTHOR'), own('PENDING'))).toBe(true);
+    expect(canDelete(user('AUTHOR'), own('REJECTED'))).toBe(true);
+    expect(canDelete(user('AUTHOR'), own('APPROVED'))).toBe(false);
+    expect(canDelete(user('AUTHOR'), other)).toBe(false);
+    expect(canDelete(user('REVIEWER'), other)).toBe(false);
+    expect(canDelete(user('USER'), other)).toBe(false);
   });
 });

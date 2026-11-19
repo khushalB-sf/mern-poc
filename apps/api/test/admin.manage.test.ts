@@ -694,6 +694,34 @@ describe('department technologies', () => {
     expect(labels((await list(world.acme.id)).active)).toEqual(['nodejs', 'react']);
   });
 
+  it('a technology shared by two departments comes back when either is restored, whichever deletion archived it', async () => {
+    // react is linked to Acme and Globex. Delete Globex (react stays: Acme still uses it), then Acme (now nobody does).
+    await adminCall('delete', `/clients/${world.globex.id}`).expect(204);
+    expect((await db.tag.findUniqueOrThrow({ where: { id: react() } })).archivedAt).toBeNull();
+    await adminCall('delete', `/clients/${world.acme.id}`).expect(204);
+    const archived = await db.tag.findUniqueOrThrow({ where: { id: react() } });
+    expect(archived.archivedAt).not.toBeNull();
+    expect(archived.archivedByClientId).toBe(world.acme.id);
+
+    // Globex was deleted first, but it is Globex that comes back first: react is used again, so it is active
+    await adminCall('post', `/clients/${world.globex.id}/restore`).expect(200);
+    const back = await db.tag.findUniqueOrThrow({ where: { id: react() } });
+    expect(back.archivedAt).toBeNull();
+    expect(back.archivedByClientId).toBeNull();
+    // restoring the other one later changes nothing
+    await adminCall('post', `/clients/${world.acme.id}/restore`).expect(200);
+    expect((await db.tag.findUniqueOrThrow({ where: { id: react() } })).archivedAt).toBeNull();
+  });
+
+  it('only technologies archived BY the deletion come back: a hand-archived one with the same timestamp does not', async () => {
+    await adminCall('delete', `/clients/${world.acme.id}/technologies/${nodejs()}`).expect(204); // archived by hand
+    const deletedAt = new Date();
+    await db.client.update({ where: { id: world.acme.id }, data: { deletedAt } });
+    await db.tag.update({ where: { id: nodejs() }, data: { archivedAt: deletedAt } }); // same instant, on purpose
+    await adminCall('post', `/clients/${world.acme.id}/restore`).expect(200);
+    expect((await db.tag.findUniqueOrThrow({ where: { id: nodejs() } })).archivedAt).not.toBeNull();
+  });
+
   it('a technology archived earlier by hand is not revived when the department is restored', async () => {
     await adminCall('delete', `/clients/${world.acme.id}/technologies/${nodejs()}`);
     await adminCall('delete', `/clients/${world.acme.id}`);

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import argon2 from 'argon2';
 import type { Express } from 'express';
@@ -37,7 +38,7 @@ export function captureLogger() {
   return { logger: pino({ level: 'info' }, stream), lines };
 }
 
-export const makeDb = () => createDb(testDatabaseUrl());
+export const makeDb = () => createDb(testDatabaseUrl(), { statementTimeoutMs: 30_000 });
 
 export function makeApp(
   db: Db,
@@ -52,7 +53,7 @@ export async function resetDb(db: Db) {
   const rows = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
   const name = rows[0]?.name;
   if (!name?.endsWith('_test')) throw new Error(`refusing to truncate non-test database "${name}"`);
-  await db.$executeRaw`TRUNCATE audit_event, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
+  await db.$executeRaw`TRUNCATE audit_event, notification, password_reset, mfa_recovery_code, question_tag, client_tag, question, tag, tag_category, client_grant, client, refresh_token, app_user CASCADE`;
 }
 
 // Cheap Argon2 parameters: fixtures need valid hashes, not strong ones.
@@ -65,7 +66,23 @@ const fixtureHash = argon2.hash(PASSWORD, {
 
 /** Cookie header value that authenticates as `userId`, minted directly (no login round trip). */
 export const cookieFor = (userId: string, secret = testEnv.JWT_ACCESS_SECRET) =>
-  `${ACCESS_COOKIE}=${signAccess(secret, userId)}`;
+  `${ACCESS_COOKIE}=${signAccess(secret, userId, userId)}`;
+
+/**
+ * Access tokens are bound to a session (the refresh-token family). `cookieFor` uses the user's id as
+ * the session id, so a test user needs one live family with that id: `buildWorld` creates it, and a
+ * user created by hand in a test needs `ensureSession`.
+ */
+export const ensureSession = (db: Db, userId: string) =>
+  db.refreshToken.create({
+    data: {
+      id: randomUUID(),
+      userId,
+      familyId: userId,
+      tokenHash: `test-session-${userId}`,
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+    },
+  });
 
 /**
  * Standard cast: two clients, users in every role, tags in three categories.
@@ -102,6 +119,8 @@ export async function buildWorld(db: Db) {
     reviewerNoGrant: await user('reviewerNoGrant', 'REVIEWER'),
     admin: await user('admin', 'ADMIN'),
   };
+
+  for (const u of Object.values(users)) await ensureSession(db, u.id);
 
   const tags = new Map<string, string>(); // "category:value" -> id
   const categories = {
@@ -158,6 +177,9 @@ const UUID = '11111111-1111-4111-8111-111111111111';
 /** Every route the app registers. A test fails if a route is added and not listed here (route sweep). */
 export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: string][] = [
   ['get', '/api/health'],
+  ['get', '/api/health/live'],
+  ['get', '/api/health/ready'],
+  ['get', '/api/metrics'],
   ['get', '/api/openapi.json'],
   ['get', '/api/docs'],
   ['get', '/api/docs/init.js'],
@@ -168,6 +190,9 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['get', '/api/tags'],
   ['get', '/api/clients'],
   ['get', '/api/questions'],
+  ['get', '/api/questions/summary'],
+  ['get', '/api/notifications'],
+  ['post', '/api/notifications/read'],
   ['get', `/api/questions/${UUID}`],
   ['get', `/api/questions/${UUID}/history`],
   ['post', '/api/questions'],
@@ -179,6 +204,14 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['patch', `/api/admin/users/${UUID}`],
   ['delete', `/api/admin/users/${UUID}`],
   ['post', `/api/admin/users/${UUID}/restore`],
+  ['post', `/api/admin/users/${UUID}/reset-link`],
+  ['post', '/api/auth/change-password'],
+  ['post', '/api/auth/reset-password'],
+  ['post', '/api/auth/mfa/setup'],
+  ['post', '/api/auth/mfa/enable'],
+  ['post', '/api/auth/mfa/disable'],
+  ['post', '/api/auth/mfa/verify'],
+  ['post', `/api/admin/users/${UUID}/mfa-reset`],
   ['put', `/api/admin/users/${UUID}/clients`],
   ['get', '/api/admin/clients'],
   ['post', '/api/admin/clients'],
@@ -187,6 +220,13 @@ export const MANIFEST: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', pat
   ['get', `/api/admin/clients/${UUID}/impact`],
   ['post', `/api/admin/clients/${UUID}/restore`],
   ['get', '/api/admin/deleted-questions'],
+  ['get', '/api/admin/tag-categories'],
+  ['post', '/api/admin/tag-categories/seniority/tags'],
+  ['patch', `/api/admin/tags/${UUID}`],
+  ['post', `/api/admin/tags/${UUID}/archive`],
+  ['post', `/api/admin/tags/${UUID}/restore`],
+  ['get', '/api/admin/audit'],
+  ['get', '/api/admin/audit/export'],
   ['post', `/api/admin/questions/${UUID}/restore`],
   ['get', `/api/admin/clients/${UUID}/technologies`],
   ['post', `/api/admin/clients/${UUID}/technologies`],

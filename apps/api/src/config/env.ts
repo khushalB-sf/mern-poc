@@ -43,13 +43,31 @@ const schema = z.object({
   // Serves Swagger UI at /api/docs and the spec at /api/openapi.json (public: it describes the contract only).
   // Default: on except in production, so a deployment does not publish its API contract by accident.
   DOCS_ENABLED: bool.optional(),
+  // A query running longer than this is cancelled, so one pathological search cannot hold a connection (0 = off).
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(15_000),
+  // Bearer token for GET /api/metrics (Prometheus). Unset = the endpoint does not exist.
+  METRICS_TOKEN: z.string().min(16, 'must be at least 16 characters').optional(),
+  // The first admin of a real deployment (created once, when there is no active admin; the password is temporary).
+  // Shared store for rate limits, so several API processes count together. Unset: in-memory, per process.
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, 'must start with redis:// or rediss://')
+    .optional(),
+  ADMIN_EMAIL: z.email().max(254).optional(),
+  ADMIN_PASSWORD: z.string().min(12, 'must be at least 12 characters').max(200).optional(),
+  // Admins must enrol two-factor before they can use anything else.
+  MFA_REQUIRED_FOR_ADMINS: bool.default(false),
+  // Key material for encrypting two-factor secrets at rest. Defaults to one derived from JWT_REFRESH_SECRET.
+  MFA_ENCRYPTION_KEY: z.string().min(32, 'must be at least 32 characters').optional(),
   SEED_ON_START: bool.default(false),
   SEED_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORD),
 });
 
 export type Config = Omit<z.infer<typeof schema>, 'DOCS_ENABLED'> & { DOCS_ENABLED: boolean };
 
-export function loadConfig(source: Record<string, string | undefined> = process.env): Config {
+export function loadConfig(raw: Record<string, string | undefined> = process.env): Config {
+  // Compose passes `VAR: ${VAR:-}` as an empty string when an option is off; blank means unset.
+  const source = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== ''));
   const parsed = schema.safeParse(source);
   if (!parsed.success) {
     // Names and reasons only: never echo values (they may be secrets).
@@ -68,6 +86,11 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     [JWT_ACCESS_SECRET, JWT_REFRESH_SECRET].some((s) => s.startsWith('dev-only'))
   ) {
     throw new Error('Replace the dev-only JWT secrets before enabling COOKIE_SECURE');
+  }
+  if (Boolean(parsed.data.ADMIN_EMAIL) !== Boolean(parsed.data.ADMIN_PASSWORD)) {
+    throw new Error(
+      'ADMIN_EMAIL and ADMIN_PASSWORD must be set together (ADMIN_PASSWORD is missing or ADMIN_EMAIL is)',
+    );
   }
   // https deployment must not seed demo accounts with the published default password.
   if (

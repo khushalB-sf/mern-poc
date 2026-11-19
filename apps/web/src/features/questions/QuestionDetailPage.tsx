@@ -113,7 +113,7 @@ export function QuestionDetailPage() {
               </section>
             )}
 
-            {me && (canEdit(me, q) || canDelete(me)) && (
+            {me && (canEdit(me, q) || canDelete(me, q)) && (
               <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-5">
                 {canEdit(me, q) && (
                   <Link to={`/questions/${q.id}/edit`} className={buttonClass('secondary')}>
@@ -121,7 +121,7 @@ export function QuestionDetailPage() {
                     Edit question
                   </Link>
                 )}
-                {canDelete(me) && (
+                {canDelete(me, q) && (
                   <Button variant="danger" onClick={() => setConfirmDelete(true)}>
                     Delete question
                   </Button>

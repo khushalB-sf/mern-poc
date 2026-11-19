@@ -15,6 +15,7 @@ import {
   makeDb,
   resetDb,
   testEnv,
+  ensureSession,
   type World,
 } from './helpers.js';
 
@@ -76,23 +77,87 @@ describe('A2 X-Forwarded-For spoofing must not reset the rate limit', () => {
 });
 
 describe('A3 session handling', () => {
-  it.fails(
-    'KNOWN GAP: an access token keeps working after logout until it expires (<=15 min)',
-    async () => {
-      const { app } = makeApp(db);
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ email: 'authora@test.dev', password: PASSWORD });
-      const cookies = (res.headers['set-cookie'] as unknown as string[]).map(
-        (c) => c.split(';')[0]!,
-      );
-      const header = cookies.join('; ');
-      expect((await request(app).get('/api/auth/me').set('Cookie', header)).status).toBe(200);
-      await request(app).post('/api/auth/logout').set('Cookie', header);
-      // Secure behaviour: the session is dead everywhere. Today the access JWT is stateless.
-      expect((await request(app).get('/api/auth/me').set('Cookie', header)).status).toBe(401);
-    },
-  );
+  const signIn = async (app: ReturnType<typeof makeApp>['app'], email = 'authora@test.dev') => {
+    const res = await request(app).post('/api/auth/login').send({ email, password: PASSWORD });
+    const cookies = (res.headers['set-cookie'] as unknown as string[]).map((c) => c.split(';')[0]!);
+    return {
+      access: cookies.find((c) => c.startsWith('access_token='))!,
+      refresh: cookies.find((c) => c.startsWith('refresh_token='))!,
+      both: cookies.join('; '),
+    };
+  };
+  const me = (app: ReturnType<typeof makeApp>['app'], cookie: string) =>
+    request(app)
+      .get('/api/auth/me')
+      .set('Cookie', cookie)
+      .then((r) => r.status);
+
+  it('an access token dies with its session: after logout it is rejected at once, not 15 minutes later', async () => {
+    const { app } = makeApp(db);
+    const s = await signIn(app);
+    expect(await me(app, s.access)).toBe(200);
+    await request(app).post('/api/auth/logout').set('Cookie', s.both);
+    expect(await me(app, s.access)).toBe(401);
+  });
+
+  it('refreshing keeps the same session: the old access token stays valid until it expires, the new one works', async () => {
+    const { app } = makeApp(db);
+    const s = await signIn(app);
+    const res = await request(app).post('/api/auth/refresh').set('Cookie', s.refresh);
+    expect(res.status).toBe(204);
+    const fresh = (res.headers['set-cookie'] as unknown as string[])
+      .find((c) => c.startsWith('access_token='))!
+      .split(';')[0]!;
+    expect(await me(app, fresh)).toBe(200);
+    expect(await me(app, s.access)).toBe(200);
+  });
+
+  it('a replayed refresh token revokes the family and so kills every access token of that session', async () => {
+    const { app } = makeApp(db);
+    const s = await signIn(app);
+    await request(app).post('/api/auth/refresh').set('Cookie', s.refresh).expect(204);
+    await request(app).post('/api/auth/refresh').set('Cookie', s.refresh).expect(401); // replay
+    expect(await me(app, s.access)).toBe(401);
+  });
+
+  it("signing out one device leaves the same user's other session working", async () => {
+    const { app } = makeApp(db);
+    const phone = await signIn(app);
+    const laptop = await signIn(app);
+    await request(app).post('/api/auth/logout').set('Cookie', phone.both);
+    expect(await me(app, phone.access)).toBe(401);
+    expect(await me(app, laptop.access)).toBe(200);
+  });
+
+  it('an admin password reset ends the access tokens too, not only the refresh tokens', async () => {
+    const { app } = makeApp(db);
+    const s = await signIn(app);
+    await request(app)
+      .patch(`/api/admin/users/${world.users.authorA.id}`)
+      .set('Cookie', cookieFor(world.users.admin.id))
+      .send({ password: 'a-brand-new-password' })
+      .expect(200);
+    expect(await me(app, s.access)).toBe(401);
+  });
+
+  it('a token is only valid with a live session of the same user: no session, a foreign one, an expired one', async () => {
+    const { app } = makeApp(db);
+    const sign = (sid: string) =>
+      `access_token=${signAccess(testEnv.JWT_ACCESS_SECRET, world.users.authorA.id, sid)}`;
+    expect(await me(app, sign('55555555-5555-4555-8555-555555555555'))).toBe(401); // does not exist
+    expect(await me(app, sign(world.users.authorB.id))).toBe(401); // another user's live session
+    await db.refreshToken.updateMany({
+      where: { familyId: world.users.authorA.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    expect(await me(app, sign(world.users.authorA.id))).toBe(401); // the user's own, but expired
+    const legacy = jwt.sign({}, testEnv.JWT_ACCESS_SECRET, {
+      subject: world.users.authorB.id,
+      issuer: 'interview-qb',
+      expiresIn: 60,
+    });
+    expect(await me(app, `access_token=${legacy}`)).toBe(401); // the old format, no session claim
+  });
 
   it('an admin password reset, deactivation or delete kills the refresh families at once', async () => {
     const { app } = makeApp(db);
@@ -130,7 +195,11 @@ describe('A3 session handling', () => {
     expect(
       (await request(app).get('/api/auth/me').set('Cookie', `access_token=${refresh}`)).status,
     ).toBe(401);
-    const access = signAccess(testEnv.JWT_ACCESS_SECRET, world.users.admin.id);
+    const access = signAccess(
+      testEnv.JWT_ACCESS_SECRET,
+      world.users.admin.id,
+      world.users.admin.id,
+    );
     expect(
       (await request(app).post('/api/auth/refresh').set('Cookie', `refresh_token=${access}`))
         .status,
@@ -140,7 +209,7 @@ describe('A3 session handling', () => {
   it('a validly signed token whose subject is not a UUID or not a user is a clean 401, never a 500', async () => {
     const { app } = makeApp(db);
     for (const sub of ['abc', "1' OR '1'='1", '', '00000000-0000-4000-8000-000000000000']) {
-      const token = signAccess(testEnv.JWT_ACCESS_SECRET, sub || 'x');
+      const token = signAccess(testEnv.JWT_ACCESS_SECRET, sub || 'x', world.users.admin.id);
       const res = await request(app).get('/api/auth/me').set('Cookie', `access_token=${token}`);
       expect(res.status, `sub=${sub}`).toBe(401);
     }
@@ -314,6 +383,7 @@ describe('A8 an admin cannot be locked out by the admins themselves', () => {
           .passwordHash,
       },
     });
+    await ensureSession(db, other.id);
     const a = cookieFor(world.users.admin.id);
     const b = cookieFor(other.id);
     // Each admin demotes the other at the same moment.

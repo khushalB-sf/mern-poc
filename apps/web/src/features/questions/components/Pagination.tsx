@@ -1,5 +1,6 @@
 import { Icon } from '../../../shared/ui/Icon';
 import { Button } from '../../../shared/ui/Button';
+import { MAX_OFFSET } from '../filters';
 
 interface Props {
   page: number;
@@ -9,10 +10,12 @@ interface Props {
 }
 
 export function Pagination({ page, pageSize, total, onPage }: Props) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
+  // Only what the API will serve: the offset is capped, so a huge result set ends at a last reachable page.
+  const reachable = Math.min(total, MAX_OFFSET + pageSize);
+  const pages = Math.max(1, Math.ceil(reachable / pageSize));
   if (total === 0 || pages === 1) return null;
   const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
+  const to = Math.min(page * pageSize, reachable);
   return (
     <nav
       aria-label="Pagination"
@@ -24,6 +27,9 @@ export function Pagination({ page, pageSize, total, onPage }: Props) {
       </Button>
       <p className="text-sm text-ink-soft">
         {from.toLocaleString()} to {to.toLocaleString()} of {total.toLocaleString()}
+        {reachable < total && (
+          <span className="block text-xs">Narrow your search to see the rest.</span>
+        )}
       </p>
       <Button size="sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>
         Next

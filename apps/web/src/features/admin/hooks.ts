@@ -1,11 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createDepartment,
+  createResetLink,
   createUser,
   deleteDepartment,
   deleteUser,
   getDepartmentImpact,
+  addTagToList,
   listAdminDepartments,
+  listTagCategories,
+  renameTag as renameListTag,
+  setTagArchived,
+  listAudit,
   listAdminUsers,
   listDeletedUsers,
   listDeletedDepartments,
@@ -14,6 +20,7 @@ import {
   listOtherTechnologies,
   restoreDepartment,
   restoreQuestion,
+  resetMfa,
   restoreUser,
   addDepartmentTechnology,
   removeDepartmentTechnology,
@@ -23,15 +30,22 @@ import {
   setUserClients,
   updateDepartment,
   updateUser,
+  type AuditFilters,
   type DepartmentInput,
   type NewUser,
   type UserPatch,
 } from './api';
 
-export const useAdminUsers = () =>
-  useQuery({
-    queryKey: ['admin', 'users'],
-    queryFn: ({ signal }) => listAdminUsers(signal),
+const cursorPaging = {
+  initialPageParam: undefined as string | undefined,
+  getNextPageParam: (last: { nextCursor: string | null }) => last.nextCursor ?? undefined,
+};
+
+export const useAdminUsers = (q = '') =>
+  useInfiniteQuery({
+    queryKey: ['admin', 'users', q],
+    queryFn: ({ pageParam, signal }) => listAdminUsers(q, pageParam, signal),
+    ...cursorPaging,
   });
 
 export const useAdminDepartments = () =>
@@ -97,9 +111,10 @@ export const useDepartmentImpact = (id: string | null) =>
 export const useRestoreDepartment = () => useAdminMutation((id: string) => restoreDepartment(id));
 
 export const useDeletedQuestions = () =>
-  useQuery({
+  useInfiniteQuery({
     queryKey: ['admin', 'deleted-questions'],
-    queryFn: ({ signal }) => listDeletedQuestions(signal),
+    queryFn: ({ pageParam, signal }) => listDeletedQuestions(pageParam, signal),
+    ...cursorPaging,
   });
 
 export const useRestoreQuestion = () => useAdminMutation((id: string) => restoreQuestion(id));
@@ -129,9 +144,35 @@ export const useSetOtherTechnologyArchived = () =>
   useAdminMutation((v: { id: string; archived: boolean }) => setOtherTechnologyArchived(v));
 
 export const useDeletedUsers = () =>
-  useQuery({
+  useInfiniteQuery({
     queryKey: ['admin', 'users-deleted'],
-    queryFn: ({ signal }) => listDeletedUsers(signal),
+    queryFn: ({ pageParam, signal }) => listDeletedUsers(pageParam, signal),
+    ...cursorPaging,
   });
 
 export const useRestoreUser = () => useAdminMutation((id: string) => restoreUser(id));
+
+/** Not an admin-list mutation: it changes nothing that is displayed, it only returns the one-time token. */
+export const useCreateResetLink = () => useMutation({ mutationFn: createResetLink });
+
+export const useResetMfa = () => useAdminMutation((id: string) => resetMfa(id));
+
+export const useAudit = (filters: AuditFilters) =>
+  useInfiniteQuery({
+    queryKey: ['admin', 'audit', filters],
+    queryFn: ({ pageParam, signal }) => listAudit(filters, pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+
+export const useTagCategories = () =>
+  useQuery({
+    queryKey: ['admin', 'tag-categories'],
+    queryFn: ({ signal }) => listTagCategories(signal),
+  });
+export const useAddTagToList = () =>
+  useAdminMutation((v: { slug: string; label: string }) => addTagToList(v));
+export const useRenameListTag = () =>
+  useAdminMutation((v: { id: string; label: string }) => renameListTag(v));
+export const useSetTagArchived = () =>
+  useAdminMutation((v: { id: string; archived: boolean }) => setTagArchived(v));

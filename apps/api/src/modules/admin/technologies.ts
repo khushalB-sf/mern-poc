@@ -51,7 +51,7 @@ export function slugOf(label: string): string {
 }
 
 /** The first of value, value-2, value-3 ... not in `taken`: two names may share a base value. */
-const freeValue = (base: string, taken: Set<string>) => {
+export const freeValue = (base: string, taken: Set<string>) => {
   let v = base;
   for (let n = 2; taken.has(v); n++) v = `${base}-${n}`;
   return v;
@@ -78,7 +78,7 @@ export async function exclusiveTechnologyIds(db: Queryable, clientId: string): P
 
 export async function listDepartmentTechnologies(db: Db, clientId: string) {
   await liveDepartment(db, clientId);
-  const [links, available, usage] = await Promise.all([
+  const [links, available] = await Promise.all([
     db.clientTag.findMany({
       where: { clientId, tag: IN_TECH },
       select: {
@@ -98,8 +98,12 @@ export async function listDepartmentTechnologies(db: Db, clientId: string) {
       orderBy: { label: 'asc' },
       select: { id: true, label: true },
     }),
-    tagUsageCounts(db),
   ]);
+  // Only this department's technologies are counted, not every tag on every question.
+  const usage = await tagUsageCounts(
+    db,
+    links.map((l) => l.tag.id),
+  );
   const rows = links
     .map(({ tag: t }) => ({
       id: t.id,
@@ -154,7 +158,10 @@ export async function addDepartmentTechnology(
           payload: { tagId: tag.id, label },
         });
       } else if (tag.archivedAt) {
-        await tx.tag.update({ where: { id: tag.id }, data: { archivedAt: null } });
+        await tx.tag.update({
+          where: { id: tag.id },
+          data: { archivedAt: null, archivedByClientId: null },
+        });
         await recordAudit(tx, log, {
           type: 'TAG_RESTORED',
           actorId: actor.id,
@@ -224,7 +231,10 @@ export async function restoreDepartmentTechnology(
       select: { tag: { select: { label: true } } },
     });
     if (!link) throw notFound('Archived technology not found in this department');
-    await tx.tag.update({ where: { id: tagId }, data: { archivedAt: null } });
+    await tx.tag.update({
+      where: { id: tagId },
+      data: { archivedAt: null, archivedByClientId: null },
+    });
     await recordAudit(tx, log, {
       type: 'TAG_RESTORED',
       actorId: actor.id,
@@ -317,7 +327,7 @@ export async function setOtherTechnologyArchived(
     if ((current.archivedAt !== null) === archived) throw notFound('Technology not found');
     await tx.tag.update({
       where: { id: tagId },
-      data: { archivedAt: archived ? new Date() : null },
+      data: { archivedAt: archived ? new Date() : null, archivedByClientId: null },
     });
     await recordAudit(tx, log, {
       type: archived ? 'TAG_ARCHIVED' : 'TAG_RESTORED',

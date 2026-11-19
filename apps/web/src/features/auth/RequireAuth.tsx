@@ -16,5 +16,13 @@ export function RequireAuth() {
   }
   if (!user)
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  // A password an admin set must be replaced first; nothing else works until it is.
+  if (user.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
+  }
+  // Admins must have two-factor on (when the server requires it): enrolment is the only thing open.
+  if (user.mfaEnrollmentRequired && location.pathname !== '/account') {
+    return <Navigate to="/account" replace />;
+  }
   return <Outlet />;
 }

@@ -77,6 +77,7 @@ export function QuestionListPage() {
       tagsError={filterTags.isError}
       onRetryTags={() => void filterTags.refetch()}
       showStatus={me?.role !== 'USER'}
+      showMine={me ? canCreate(me) : false}
       filters={filters}
       onChange={(f) => setFilters(f)}
     />
@@ -98,6 +99,15 @@ export function QuestionListPage() {
             key: 'client',
             label: `${clients.data?.find((c) => c.id === filters.clientId)?.name ?? 'Department'} only`,
             remove: () => setFilters({ ...filters, clientId: '', page: 1 }),
+          },
+        ]
+      : []),
+    ...(filters.mine
+      ? [
+          {
+            key: 'mine',
+            label: 'My questions',
+            remove: () => setFilters({ ...filters, mine: false, page: 1 }),
           },
         ]
       : []),

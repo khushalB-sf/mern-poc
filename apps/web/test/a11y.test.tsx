@@ -124,7 +124,9 @@ describe('accessibility (axe-core)', () => {
     await userEvent.tab(); // skip link
     expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveFocus();
     const order: string[] = [];
-    for (let i = 0; i < 6; i++) {
+    // The skip link comes first. After it: brand, menu button (hidden by CSS from `lg`, which jsdom does not
+    // apply), the navigation and account links, sign out, then the page.
+    for (let i = 0; i < 10; i++) {
       await userEvent.tab();
       order.push(
         (document.activeElement as HTMLElement).getAttribute('aria-label') ??

@@ -76,7 +76,7 @@ describe('C2 query-string parameters', () => {
     'limit=abc',
     'limit=1e3',
     'offset=-1',
-    'offset=100001',
+    'offset=10001',
     'offset=1.5',
     'client=not-a-uuid',
     'client[]=x',
@@ -97,7 +97,7 @@ describe('C2 query-string parameters', () => {
 
   it('valid boundary values still work', async () => {
     expect((await search('limit=50&offset=0')).status).toBe(200);
-    expect((await search('limit=1&offset=100000')).status).toBe(200);
+    expect((await search('limit=1&offset=10000')).status).toBe(200);
   });
 });
 

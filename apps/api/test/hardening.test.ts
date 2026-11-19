@@ -75,9 +75,17 @@ describe('architecture guard: only question.repo.ts touches the question tables'
 // ---------------------------------------------------------------- route sweep (SEC-02)
 const PUBLIC = new Set([
   'GET /api/health',
+  'GET /api/health/live',
+  'GET /api/health/ready',
+  // Its own bearer token (and it does not exist at all unless METRICS_TOKEN is set).
+  'GET /api/metrics',
   'POST /api/auth/login',
   'POST /api/auth/refresh',
   'POST /api/auth/logout',
+  // The one-time reset link is the credential: the person cannot sign in.
+  'POST /api/auth/reset-password',
+  // The step-up token from a correct password is the credential for the second sign-in step.
+  'POST /api/auth/mfa/verify',
   // API docs describe the contract only and carry no data.
   'GET /api/openapi.json',
   'GET /api/docs',

@@ -111,10 +111,13 @@ describe('access token / me', () => {
   it.each([
     ['no cookie', undefined],
     ['garbage', 'access_token=garbage'],
-    ['signed with the wrong secret', `access_token=${signAccess('x'.repeat(32), 'whoever')}`],
+    [
+      'signed with the wrong secret',
+      `access_token=${signAccess('x'.repeat(32), 'whoever', 'sid')}`,
+    ],
     [
       'signed with the refresh secret',
-      `access_token=${signAccess(testEnv.JWT_REFRESH_SECRET, 'whoever')}`,
+      `access_token=${signAccess(testEnv.JWT_REFRESH_SECRET, 'whoever', 'sid')}`,
     ],
   ])('401 for %s', async (_name, cookie) => {
     const req = request(app).get('/api/auth/me');
@@ -124,7 +127,12 @@ describe('access token / me', () => {
   });
 
   it('401 for an expired token', async () => {
-    const expired = signAccess(testEnv.JWT_ACCESS_SECRET, world.users.plain.id, -10);
+    const expired = signAccess(
+      testEnv.JWT_ACCESS_SECRET,
+      world.users.plain.id,
+      world.users.plain.id,
+      -10,
+    );
     const res = await request(app).get('/api/auth/me').set('Cookie', `access_token=${expired}`);
     expect(res.status).toBe(401);
   });
@@ -156,7 +164,9 @@ describe('refresh rotation', () => {
     expect(newRefresh).not.toBe(oldRefresh);
     expect(cookieValue(res, 'access_token')).toBeTruthy();
 
-    const rows = await db.refreshToken.findMany();
+    const rows = await db.refreshToken.findMany({
+      where: { NOT: { tokenHash: { startsWith: 'test-session-' } } },
+    });
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.tokenHash !== newRefresh && r.tokenHash !== oldRefresh)).toBe(true);
     expect(rows.some((r) => r.tokenHash === hashToken(newRefresh))).toBe(true);
@@ -181,7 +191,13 @@ describe('refresh rotation', () => {
 
     expect((await refreshWith(t1)).status).toBe(401); // replay of a spent token
     expect((await refreshWith(t2)).status).toBe(401); // the legitimate successor is now dead too
-    expect((await db.refreshToken.findMany()).every((r) => r.revokedAt !== null)).toBe(true);
+    expect(
+      (
+        await db.refreshToken.findMany({
+          where: { NOT: { tokenHash: { startsWith: 'test-session-' } } },
+        })
+      ).every((r) => r.revokedAt !== null),
+    ).toBe(true);
   });
 
   it('does not touch other sessions of the same user when one family is revoked', async () => {
@@ -202,7 +218,7 @@ describe('refresh rotation', () => {
   it.each([
     ['missing cookie', undefined],
     ['garbage', 'garbage'],
-    ['an access token', signAccess(testEnv.JWT_ACCESS_SECRET, 'x')],
+    ['an access token', signAccess(testEnv.JWT_ACCESS_SECRET, 'x', 'sid')],
   ])('401 for %s', async (_n, token) => {
     expect((await refreshWith(token)).status).toBe(401);
   });
@@ -211,7 +227,13 @@ describe('refresh rotation', () => {
     const t = cookieValue(await login(), 'refresh_token')!;
     await db.appUser.update({ where: { email: 'authora@test.dev' }, data: { active: false } });
     expect((await refreshWith(t)).status).toBe(401);
-    expect((await db.refreshToken.findMany()).every((r) => r.revokedAt !== null)).toBe(true);
+    expect(
+      (
+        await db.refreshToken.findMany({
+          where: { NOT: { tokenHash: { startsWith: 'test-session-' } } },
+        })
+      ).every((r) => r.revokedAt !== null),
+    ).toBe(true);
   });
 });
 

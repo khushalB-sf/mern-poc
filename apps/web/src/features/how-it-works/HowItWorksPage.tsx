@@ -344,8 +344,9 @@ function SessionPanel() {
       id: 'claims',
       body: (
         <>
-          The access token carries only your user id. Role and active status are read from the
-          database on each request.
+          The access token carries your user id and the id of your session. Role and active status
+          are read from the database on each request, and the token stops working the moment its
+          session is revoked.
         </>
       ),
     },

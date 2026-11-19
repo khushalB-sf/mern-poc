@@ -647,7 +647,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
       {
         title: 'Work out what only this department used',
         detail:
-          'A technology is exclusive when no other live department uses it. Those are archived with the same timestamp as the deletion, so a restore can tell which ones this deletion archived and leaves anything archived earlier by hand alone.',
+          'A technology is exclusive when no other live department uses it. Those are archived and marked as archived by this deletion, so a restore brings back exactly those (and any technology a deletion archived that this department also uses) and leaves anything archived by hand alone.',
         where: 'api · modules/admin/service.ts → deleteClient(), restoreClient()',
         checks: [
           { text: 'The department exists and is not already deleted.', fail: '404 NOT_FOUND' },
@@ -662,7 +662,7 @@ SELECT … FROM audit_event WHERE question_id = $1 ORDER BY at;`,
           {
             table: 'tag',
             action: 'UPDATE',
-            row: 'archived_at = the deletion time, for technologies only this department used',
+            row: 'archived_at = now and archived_by_client_id = this department, for technologies only it used',
           },
           {
             table: 'client',

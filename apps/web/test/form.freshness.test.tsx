@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { baseHandlers, mockApi, question, renderApp } from './helpers';
@@ -87,6 +87,106 @@ describe('the question form copes when technologies changed under it', () => {
     await waitFor(() => {
       expect(gets(calls, '/api/tags')).toBeGreaterThan(before.tags);
       expect(gets(calls, '/api/clients')).toBeGreaterThan(before.clients);
+    });
+  });
+
+  describe('editing a question into a near-duplicate', () => {
+    const original = question({
+      text: 'Original question text',
+      updatedAt: '2026-01-02T10:00:00.000Z',
+      tags: [],
+    });
+    const dup = {
+      status: 409,
+      body: {
+        error: {
+          code: 'DUPLICATE_SUSPECTED',
+          message: 'A very similar question already exists',
+          matches: [{ id: 'q9', text: 'Almost the same question text', similarity: 0.82 }],
+        },
+      },
+    };
+
+    it('shows the matches, and saving anyway resends the edit with confirmNotDuplicate', async () => {
+      let first = true;
+      const calls = mockApi({
+        ...handlers,
+        'GET /api/questions/q1': { body: { question: original } },
+        'GET /api/questions/q1/history': { body: { items: [] } },
+        'PATCH /api/questions/q1': () =>
+          first ? ((first = false), dup) : { body: { question: original } },
+      });
+      renderApp('/questions/q1/edit');
+      await userEvent.type(await screen.findByLabelText('Question'), ' reworded');
+      await userEvent.click(screen.getByRole('button', { name: 'Save and resubmit' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Almost the same question text');
+      await userEvent.click(within(dialog).getByRole('button', { name: /anyway/i }));
+      await waitFor(() => expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(2));
+      expect(calls.filter((c) => c.method === 'PATCH')[1]!.body).toMatchObject({
+        confirmNotDuplicate: true,
+      });
+    });
+  });
+
+  describe('editing a question someone else is also editing', () => {
+    const original = question({
+      text: 'Original question text',
+      updatedAt: '2026-01-02T10:00:00.000Z',
+      tags: [],
+    });
+    const theirs = question({
+      text: 'Their saved version',
+      updatedAt: '2026-01-02T11:00:00.000Z',
+      tags: [],
+    });
+
+    it('sends the version you opened, so the server can tell if it changed', async () => {
+      const calls = mockApi({
+        ...handlers,
+        'GET /api/questions/q1': { body: { question: original } },
+        'PATCH /api/questions/q1': { body: { question: theirs } },
+        'GET /api/questions/q1/history': { body: { items: [] } },
+      });
+      renderApp('/questions/q1/edit');
+      await userEvent.type(await screen.findByLabelText('Question'), ' plus more');
+      await userEvent.click(screen.getByRole('button', { name: 'Save and resubmit' }));
+      await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+      expect(calls.find((c) => c.method === 'PATCH')!.body).toMatchObject({
+        text: 'Original question text plus more',
+        expectedUpdatedAt: '2026-01-02T10:00:00.000Z',
+      });
+    });
+
+    it('on a conflict says what happened, keeps your text, and loads their version on request', async () => {
+      let served = original;
+      mockApi({
+        ...handlers,
+        'GET /api/questions/q1': () => ({ body: { question: served } }),
+        'PATCH /api/questions/q1': {
+          status: 409,
+          body: {
+            error: {
+              code: 'EDIT_CONFLICT',
+              message:
+                'Someone else changed this question while you were editing it. Reload to see their version.',
+            },
+          },
+        },
+      });
+      renderApp('/questions/q1/edit');
+      await userEvent.type(await screen.findByLabelText('Question'), ' MY EDIT');
+      await userEvent.click(screen.getByRole('button', { name: 'Save and resubmit' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/Someone else changed this question/);
+      expect(screen.getByLabelText('Question')).toHaveValue('Original question text MY EDIT'); // nothing lost yet
+
+      served = theirs;
+      await userEvent.click(screen.getByRole('button', { name: 'Load their version' }));
+      await waitFor(() =>
+        expect(screen.getByLabelText('Question')).toHaveValue('Their saved version'),
+      );
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 });

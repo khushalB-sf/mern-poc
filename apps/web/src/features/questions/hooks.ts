@@ -10,6 +10,7 @@ import {
   deleteQuestion,
   getHistory,
   getQuestion,
+  getSummary,
   listClients,
   listQuestions,
   listTags,
@@ -55,6 +56,23 @@ const rank = (slug: string) => {
 export const refreshTaxonomy = (qc: QueryClient) =>
   Promise.all(['tags', 'clients'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
 
+/** Lists, the reviewer's queue count and notifications all change when a question does. */
+const refreshQuestions = (qc: QueryClient) =>
+  Promise.all(
+    ['questions', 'summary', 'notifications'].map((k) => qc.invalidateQueries({ queryKey: [k] })),
+  );
+
+/** What is waiting (queue size, own questions by status). Polled gently so the badge stays current. */
+export const useSummary = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['summary'],
+    queryFn: ({ signal }) => getSummary(signal),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
 export const useTags = (forFilter = false) =>
   useQuery({
     queryKey: forFilter ? ['tags', 'filter'] : ['tags'],
@@ -80,7 +98,7 @@ export function useCreateQuestion() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: QuestionInput) => createQuestion(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => refreshQuestions(qc),
   });
 }
 
@@ -92,7 +110,7 @@ export function useDeleteQuestion(id: string) {
     onSuccess: () => {
       qc.removeQueries({ queryKey: ['questions', 'detail', id] });
       qc.removeQueries({ queryKey: ['questions', 'history', id] });
-      return qc.invalidateQueries({ queryKey: ['questions'] });
+      return refreshQuestions(qc);
     },
   });
 }
@@ -103,15 +121,19 @@ export function useReviewQuestion(id: string) {
     mutationFn: (input: { decision: 'APPROVED' | 'REJECTED'; note: string }) =>
       reviewQuestion(id, input),
     // Detail, history and every list (the reviewer's queue changes) are now stale.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => refreshQuestions(qc),
   });
 }
 
 export function useUpdateQuestion(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Pick<QuestionInput, 'text' | 'answerNotes' | 'tags'>) =>
-      updateQuestion(id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['questions'] }),
+    mutationFn: (
+      input: Pick<QuestionInput, 'text' | 'answerNotes' | 'tags'> & {
+        expectedUpdatedAt?: string;
+        confirmNotDuplicate?: boolean;
+      },
+    ) => updateQuestion(id, input),
+    onSuccess: () => refreshQuestions(qc),
   });
 }

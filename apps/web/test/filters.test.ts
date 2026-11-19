@@ -20,6 +20,7 @@ describe('filters <-> URL', () => {
       tags: ['seniority:senior', 'technology:react'],
       clientId: 'c1',
       status: '',
+      mine: false,
       page: 3,
     });
   });
@@ -49,6 +50,7 @@ describe('filters <-> URL', () => {
       tags: ['type:coding', 'technology:go'],
       clientId: 'c1',
       status: 'APPROVED' as const,
+      mine: true,
       page: 2,
     };
     expect(parseFilters(toSearchParams(f))).toEqual({
@@ -86,5 +88,21 @@ describe('filters <-> URL', () => {
     ).toBe(4);
     expect(hasAnyFilter({ ...EMPTY_FILTERS, q: 'x' })).toBe(true);
     expect(hasAnyFilter(EMPTY_FILTERS)).toBe(false);
+  });
+});
+
+describe('the "my questions" filter', () => {
+  it('lives in the URL as mine=true and round-trips', () => {
+    const f = parseFilters(new URLSearchParams('mine=true&q=cache'));
+    expect(f.mine).toBe(true);
+    expect(toSearchParams(f).toString()).toBe('q=cache&mine=true');
+    expect(parseFilters(new URLSearchParams('')).mine).toBe(false);
+    expect(parseFilters(new URLSearchParams('mine=yes')).mine).toBe(false); // only "true" counts
+    expect(toSearchParams({ ...EMPTY_FILTERS }).toString()).toBe(''); // off by default: clean URL
+  });
+
+  it('is sent to the API only when on', () => {
+    expect(toApiQuery({ ...EMPTY_FILTERS, mine: true })).toContain('mine=true');
+    expect(toApiQuery(EMPTY_FILTERS)).not.toContain('mine');
   });
 });

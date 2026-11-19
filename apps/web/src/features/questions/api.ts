@@ -49,8 +49,18 @@ export const reviewQuestion = (
 
 export const updateQuestion = (
   id: string,
-  body: Pick<QuestionInput, 'text' | 'answerNotes' | 'tags'>,
+  body: Pick<QuestionInput, 'text' | 'answerNotes' | 'tags'> & {
+    expectedUpdatedAt?: string;
+    confirmNotDuplicate?: boolean;
+  },
 ) =>
   apiFetch<{ question: Question }>(`/questions/${id}`, { method: 'PATCH', body }).then(
     (r) => r.question,
   );
+
+export interface Summary {
+  toReview: number;
+  mine: { pending: number; rejected: number; approved: number };
+}
+export const getSummary = (signal?: AbortSignal) =>
+  apiFetch<Summary>('/questions/summary', { signal });

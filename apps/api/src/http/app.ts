@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
-import express, { type Express } from 'express';
+import express, { type Express, type RequestHandler } from 'express';
 import helmet from 'helmet';
 import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
@@ -9,11 +9,13 @@ import type { Db } from '../db/prisma.js';
 import { adminRoutes } from '../modules/admin/routes.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { clientRoutes } from '../modules/clients/routes.js';
+import { notificationRoutes } from '../modules/notifications/routes.js';
 import { questionRoutes } from '../modules/questions/routes.js';
 import { tagRoutes } from '../modules/tags/routes.js';
 import { docsRoutes } from '../docs/routes.js';
 import { originCheck } from './csrf.js';
-import { perUserLimit } from './rateLimit.js';
+import { createMetrics, recordBase } from './metrics.js';
+import { perUserLimit, restartLimiterNumbering } from './rateLimit.js';
 import { rejectNul } from './nul.js';
 import { errorHandler, notFoundHandler } from './errors.js';
 
@@ -24,7 +26,10 @@ export interface AppDeps {
 }
 
 export function createApp({ config, logger, db }: AppDeps): Express {
+  restartLimiterNumbering();
   const app = express();
+  const metrics = createMetrics(config.METRICS_TOKEN);
+  app.use(metrics.middleware);
 
   // Take the client IP from X-Forwarded-For only for as many proxy hops as are configured. The default
   // is none: trusting the header when the API is reachable directly lets a client pick its own
@@ -62,22 +67,31 @@ export function createApp({ config, logger, db }: AppDeps): Express {
   app.use(originCheck(config.ALLOWED_ORIGINS));
 
   const api = express.Router();
-  api.get('/health', async (_req, res) => {
+  api.use(recordBase);
+  // Liveness: the process answers. Readiness (and the original /health): it can also reach the database.
+  api.get('/health/live', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+  const ready: RequestHandler = async (_req, res) => {
     try {
       await db.$queryRaw`SELECT 1`;
       res.json({ status: 'ok' });
     } catch {
       res.status(503).json({ status: 'unavailable' });
     }
-  });
+  };
+  api.get('/health', ready);
+  api.get('/health/ready', ready);
+  api.get('/metrics', metrics.handler); // 404 unless METRICS_TOKEN is set
   if (config.DOCS_ENABLED) api.use(docsRoutes());
-  api.use('/auth', authRoutes(db, config));
-  api.use('/questions', questionRoutes(db, config));
+  api.use('/auth', recordBase, authRoutes(db, config));
+  api.use('/questions', recordBase, questionRoutes(db, config));
   // One allowance per signed-in user for everything that is not the questions API (which has its own).
   const otherLimit = perUserLimit(config.RATE_LIMIT_OTHER_PER_MIN);
-  api.use('/tags', tagRoutes(db, config, otherLimit));
-  api.use('/clients', clientRoutes(db, config, otherLimit));
-  api.use('/admin', adminRoutes(db, config, otherLimit));
+  api.use('/tags', recordBase, tagRoutes(db, config, otherLimit));
+  api.use('/clients', recordBase, clientRoutes(db, config, otherLimit));
+  api.use('/notifications', recordBase, notificationRoutes(db, config, otherLimit));
+  api.use('/admin', recordBase, adminRoutes(db, config, otherLimit));
   app.use('/api', api);
 
   app.use(notFoundHandler);

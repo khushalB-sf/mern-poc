@@ -5,7 +5,7 @@ import { ApiError } from '../../shared/api/client';
 import type { DuplicateMatch, Question } from '../../shared/api/types';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { Page, PageHeader } from '../../shared/ui/Page';
-import { buttonClass } from '../../shared/ui/Button';
+import { Button, buttonClass } from '../../shared/ui/Button';
 import { ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
 import { canCreate, canEdit, isAdmin, useMe } from '../auth/hooks';
@@ -218,10 +218,51 @@ function EditView({
   const qc = useQueryClient();
   const [formError, setFormError] = useState<string>();
   const [serverErrors, setServerErrors] = useState<FieldErrors>();
+  // Someone saved this question while it was open here: the form offers to load their version.
+  const [conflict, setConflict] = useState(false);
+  const [duplicate, setDuplicate] = useState<{
+    matches: DuplicateMatch[];
+    values: FormValues;
+  } | null>(null);
+
+  const submit = (v: FormValues, confirmNotDuplicate = false) => {
+    setFormError(undefined);
+    setServerErrors(undefined);
+    update.mutate(
+      {
+        text: v.text,
+        answerNotes: v.answerNotes,
+        tags: v.tags,
+        expectedUpdatedAt: question.updatedAt,
+        ...(confirmNotDuplicate && { confirmNotDuplicate: true }),
+      },
+      {
+        onSuccess: () => {
+          setDuplicate(null);
+          toast(admin ? 'Changes saved' : 'Changes saved and sent for review');
+          navigate(`/questions/${question.id}`);
+        },
+        onError: (e) => {
+          if (e instanceof ApiError && e.code === 'DUPLICATE_SUSPECTED') {
+            setDuplicate({ matches: (e.details.matches as DuplicateMatch[]) ?? [], values: v });
+            return;
+          }
+          setDuplicate(null);
+          if (isTagConflict(e)) void refreshTaxonomy(qc);
+          setConflict(e instanceof ApiError && e.code === 'EDIT_CONFLICT');
+          const { formError, fields } = explain(e);
+          setFormError(formError);
+          setServerErrors(fields);
+        },
+      },
+    );
+  };
 
   return (
     <Shell title="Edit question">
       <QuestionForm
+        // A new version of the question remounts the form with its text, so "Load their version" really loads it.
+        key={question.updatedAt}
         mode="edit"
         defaultValues={{
           text: question.text,
@@ -237,25 +278,29 @@ function EditView({
         serverErrors={serverErrors}
         cancelTo={`/questions/${question.id}`}
         goesLive={admin}
-        onSubmit={(v) => {
-          setFormError(undefined);
-          setServerErrors(undefined);
-          update.mutate(
-            { text: v.text, answerNotes: v.answerNotes, tags: v.tags },
-            {
-              onSuccess: () => {
-                toast(admin ? 'Changes saved' : 'Changes saved and sent for review');
-                navigate(`/questions/${question.id}`);
-              },
-              onError: (e) => {
-                if (isTagConflict(e)) void refreshTaxonomy(qc);
-                const { formError, fields } = explain(e);
-                setFormError(formError);
-                setServerErrors(fields);
-              },
-            },
-          );
-        }}
+        onSubmit={(v) => submit(v)}
+        formAction={
+          conflict ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setConflict(false);
+                setFormError(undefined);
+                void qc.invalidateQueries({ queryKey: ['questions'] });
+              }}
+            >
+              Load their version
+            </Button>
+          ) : undefined
+        }
+      />
+      <DuplicateDialog
+        open={duplicate !== null}
+        yourText={duplicate?.values.text ?? ''}
+        matches={duplicate?.matches ?? []}
+        submitting={update.isPending}
+        onEdit={() => setDuplicate(null)}
+        onSubmitAnyway={() => duplicate && submit(duplicate.values, true)}
       />
     </Shell>
   );

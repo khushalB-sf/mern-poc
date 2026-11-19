@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link } from 'react-router';
 import { z } from 'zod';
@@ -34,6 +34,8 @@ interface Props {
   lockedClientName?: string | null | undefined;
   submitting: boolean;
   formError?: string | undefined;
+  /** Shown under the form error, e.g. a button that fixes it. */
+  formAction?: ReactNode;
   /** Field errors reported by the server, keyed by form field. */
   serverErrors?: Partial<Record<keyof FormValues, string>> | undefined;
   cancelTo: string;
@@ -50,6 +52,7 @@ export function QuestionForm({
   lockedClientName,
   submitting,
   formError,
+  formAction,
   serverErrors,
   cancelTo,
   goesLive = false,
@@ -105,6 +108,7 @@ export function QuestionForm({
           className="rounded-lg border border-danger bg-danger-bg px-3 py-2.5 text-sm font-medium text-danger"
         >
           {formError}
+          {formAction && <span className="ml-3 inline-block">{formAction}</span>}
         </p>
       )}
 

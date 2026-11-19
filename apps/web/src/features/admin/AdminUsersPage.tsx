@@ -27,7 +27,8 @@ function DeletedUsers() {
   const deleted = useDeletedUsers();
   const restore = useRestoreUser();
   const toast = useToast();
-  if (!deleted.data || deleted.data.length === 0) return null;
+  const gone = deleted.data?.pages.flatMap((p) => p.items) ?? [];
+  if (gone.length === 0) return null;
   return (
     <section aria-labelledby="deleted-users" className="mt-10">
       <h2 id="deleted-users" className="font-serif text-xl font-semibold">
@@ -46,7 +47,7 @@ function DeletedUsers() {
         aria-label="Deleted users"
         className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
       >
-        {deleted.data.map((u) => (
+        {gone.map((u) => (
           <li key={u.id} className="flex items-center justify-between gap-3 p-4">
             <div className="flex min-w-0 items-center gap-3">
               <Avatar name={u.name} />
@@ -82,7 +83,11 @@ function DeletedUsers() {
 export function AdminUsersPage() {
   useDocumentTitle('Users');
   const { data: me } = useMe();
-  const users = useAdminUsers();
+  // What is typed, and what has been searched for (the list changes on Enter, not on every key).
+  const [typed, setTyped] = useState('');
+  const [search, setSearch] = useState('');
+  const users = useAdminUsers(search);
+  const rows = users.data?.pages.flatMap((p) => p.items) ?? [];
   const changeRole = useChangeRole();
   const toast = useToast();
   const remove = useDeleteUser();
@@ -112,14 +117,38 @@ export function AdminUsersPage() {
         }
       />
 
+      <form
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSearch(typed.trim());
+        }}
+        className="mb-4"
+      >
+        <label htmlFor="user-search" className="sr-only">
+          Search users
+        </label>
+        <input
+          id="user-search"
+          type="search"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="Search by name or email"
+          maxLength={100}
+          className="min-h-11 w-full max-w-sm rounded-lg border border-control bg-surface px-3 shadow-sm focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0"
+        />
+      </form>
+
       {users.isPending ? (
         <PageSpinner label="Loading users" />
       ) : users.isError ? (
         <ErrorState title="Couldn't load users" onRetry={() => void users.refetch()}>
           {users.error.message}
         </ErrorState>
-      ) : users.data.length === 0 ? (
-        <EmptyState title="No users yet" />
+      ) : rows.length === 0 ? (
+        <EmptyState title={search ? 'No users match' : 'No users yet'}>
+          {search ? 'Try a different name or email.' : undefined}
+        </EmptyState>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
           <table className="w-full text-sm">
@@ -141,7 +170,7 @@ export function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.data.map((u) => {
+              {rows.map((u) => {
                 const self = u.id === me?.id;
                 return (
                   <tr key={u.id} className="border-b border-line align-top last:border-b-0">
@@ -210,6 +239,13 @@ export function AdminUsersPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {users.hasNextPage && (
+        <div className="mt-4 text-center">
+          <Button loading={users.isFetchingNextPage} onClick={() => void users.fetchNextPage()}>
+            Load more
+          </Button>
         </div>
       )}
 

@@ -73,14 +73,15 @@ export const APPROACHES: Approach[] = [
       <>
         A 15-minute access token and a 7-day refresh token live in <Code>httpOnly</Code>,{' '}
         <Code>SameSite=Strict</Code> cookies with narrow paths. The refresh token is stored hashed
-        and works once; replaying a used one revokes the whole session family. Role and{' '}
-        <Code>active</Code> are read from the database on every request, so a demotion or a
-        deactivation applies at once.
+        and works once; replaying a used one revokes the whole session family. The access token
+        carries the session id and is only good while that session lives, so signing out, a password
+        reset or a replay ends it at once. Role and <Code>active</Code> are read from the database
+        on every request, so a demotion or a deactivation applies at once.
       </>
     ),
     why: 'Scripts cannot read the cookies, CSRF is blocked by SameSite plus an Origin check, and a stolen refresh token is detected the first time it is reused.',
     tradeoff:
-      'One user lookup per request. The access token is not tied to a session, so it stays valid for up to 15 minutes after a sign-out.',
+      'One database lookup per request (the user and the session check share one query). Signing out cannot be undone from the browser, because the session is gone on the server.',
   },
   {
     id: 'review',
@@ -122,8 +123,9 @@ export const APPROACHES: Approach[] = [
         Departments and technologies are many-to-many (<Code>client_tag</Code>). A department
         question may only use its own technologies, a global one any active technology. Removing a
         shared technology only unlinks it; removing one nobody else uses archives it. Deleting a
-        department archives the technologies only it used, with the same timestamp, so restoring it
-        brings back exactly those. Technologies with no department are grouped as “Other”.
+        department archives the technologies only it used and marks them with that department, so
+        restoring a department that uses them brings them back, and a technology archived by hand
+        stays archived. Technologies with no department are grouped as “Other”.
       </>
     ),
     why: 'One technology, one name, one set of counts, and no duplicates like “Node.js (MERN)” and “Node.js (MEAN)”.',
@@ -216,7 +218,7 @@ export const SECURITY_ROWS: SecurityRow[] = [
   {
     threat: 'Session theft and replay',
     defence:
-      'httpOnly SameSite=Strict cookies, hashed single-use refresh tokens, whole family revoked on reuse, sessions killed on password reset, deactivation and delete.',
+      'httpOnly SameSite=Strict cookies, hashed single-use refresh tokens, whole family revoked on reuse, access tokens bound to their session so a sign-out ends them at once, sessions killed on password reset, deactivation and delete.',
     proof: 'auth.test.ts, security.auth.test.ts',
   },
   {
@@ -314,10 +316,6 @@ export const PRACTICES: PracticeGroup[] = [
         The security pass found real holes this way (login rotation, spoofed proxy header, NUL
         bytes, a last-admin race, cacheable responses) and fixed each with the failing test shown
         first.
-      </>,
-      <>
-        A known limit is documented by a test marked <Code>it.fails</Code> (the access token staying
-        valid after a sign-out), so it flips the moment the behaviour changes.
       </>,
       <>
         Bug reports become tests too: the dropdown that crashed a browser tab when you clicked an

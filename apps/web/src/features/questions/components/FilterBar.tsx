@@ -24,6 +24,8 @@ interface Props {
   onRetryTags: () => void;
   /** Read-only users only ever see approved questions, so they get no status control. */
   showStatus: boolean;
+  /** Authors and admins write questions; read-only users and reviewers have no "mine" to filter. */
+  showMine?: boolean;
   filters: Filters;
   onChange: (next: Filters) => void;
 }
@@ -41,6 +43,7 @@ export function FilterBar({
   tagsError,
   onRetryTags,
   showStatus,
+  showMine = false,
   filters,
   onChange,
 }: Props) {
@@ -104,6 +107,18 @@ export function FilterBar({
             </Dropdown>
           );
         })
+      )}
+
+      {showMine && (
+        <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium shadow-sm has-[:checked]:border-accent/40 has-[:checked]:bg-accent-soft has-[:checked]:text-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent">
+          <input
+            type="checkbox"
+            checked={filters.mine}
+            onChange={() => onChange({ ...filters, mine: !filters.mine, page: 1 })}
+            className={INPUT}
+          />
+          My questions
+        </label>
       )}
 
       {showStatus && (

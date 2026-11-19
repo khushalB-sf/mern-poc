@@ -9,6 +9,7 @@ import { Button } from '../../shared/ui/Button';
 import { TextField } from '../../shared/ui/Field';
 import { Icon, type IconName } from '../../shared/ui/Icon';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from './demoAccounts';
+import { MfaStep } from './MfaStep';
 import { useLogin, useMe } from './hooks';
 
 const schema = z.object({
@@ -56,6 +57,8 @@ export function LoginPage() {
   const from = (useLocation().state as { from?: string } | null)?.from ?? '/';
   const login = useLogin();
   const [showPassword, setShowPassword] = useState(false);
+  // Set when the password was right but the account also needs a code.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
 
   const {
     register,
@@ -184,59 +187,79 @@ export function LoginPage() {
 
       <div className="flex items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
-          <h2 className="font-serif text-2xl font-semibold">Welcome back</h2>
-          <p className="mt-1 text-ink-soft">Use your work email to continue.</p>
-
-          <form
-            noValidate
-            onSubmit={handleSubmit((v) =>
-              login.mutate(v, { onSuccess: () => navigate(from, { replace: true }) }),
-            )}
-            className="mt-6 space-y-4"
-          >
-            {login.isError && (
-              <p
-                role="alert"
-                className="rounded-lg border border-danger bg-danger-bg px-3 py-2.5 text-sm font-medium text-danger"
-              >
-                {errorMessage(login.error)}
-              </p>
-            )}
-            <TextField
-              label="Email"
-              type="email"
-              autoComplete="username"
-              error={errors.email?.message}
-              {...register('email')}
+          {mfaToken ? (
+            <MfaStep
+              token={mfaToken}
+              onRestart={() => setMfaToken(null)}
+              onSignedIn={() => navigate(from, { replace: true })}
             />
-            <div>
-              <TextField
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                error={errors.password?.message}
-                {...register('password')}
-              />
-              <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-sm text-ink-soft">
-                <input
-                  type="checkbox"
-                  checked={showPassword}
-                  onChange={(e) => setShowPassword(e.target.checked)}
-                  className="size-4 accent-[var(--accent)]"
-                />
-                Show password
-              </label>
-            </div>
-            <Button type="submit" variant="primary" loading={login.isPending} className="w-full">
-              Sign in
-            </Button>
-          </form>
+          ) : (
+            <>
+              <h2 className="font-serif text-2xl font-semibold">Welcome back</h2>
+              <p className="mt-1 text-ink-soft">Use your work email to continue.</p>
 
-          <p className="mt-4 text-sm">
-            <Link to="/how-it-works" className="font-medium text-accent underline">
-              How access and permissions work
-            </Link>
-          </p>
+              <form
+                noValidate
+                onSubmit={handleSubmit((v) =>
+                  login.mutate(v, {
+                    onSuccess: (result) =>
+                      'mfaRequired' in result
+                        ? setMfaToken(result.mfaToken)
+                        : navigate(from, { replace: true }),
+                  }),
+                )}
+                className="mt-6 space-y-4"
+              >
+                {login.isError && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-danger bg-danger-bg px-3 py-2.5 text-sm font-medium text-danger"
+                  >
+                    {errorMessage(login.error)}
+                  </p>
+                )}
+                <TextField
+                  label="Email"
+                  type="email"
+                  autoComplete="username"
+                  error={errors.email?.message}
+                  {...register('email')}
+                />
+                <div>
+                  <TextField
+                    label="Password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    error={errors.password?.message}
+                    {...register('password')}
+                  />
+                  <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-sm text-ink-soft">
+                    <input
+                      type="checkbox"
+                      checked={showPassword}
+                      onChange={(e) => setShowPassword(e.target.checked)}
+                      className="size-4 accent-[var(--accent)]"
+                    />
+                    Show password
+                  </label>
+                </div>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={login.isPending}
+                  className="w-full"
+                >
+                  Sign in
+                </Button>
+              </form>
+
+              <p className="mt-4 text-sm">
+                <Link to="/how-it-works" className="font-medium text-accent underline">
+                  How access and permissions work
+                </Link>
+              </p>
+            </>
+          )}
         </div>
       </div>
     </main>

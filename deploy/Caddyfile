@@ -1,0 +1,8 @@
+# TLS front door (compose profile `tls`). SITE_ADDRESS is the public hostname, e.g. questions.example.com:
+# Caddy then obtains and renews a Let's Encrypt certificate by itself (ports 80 and 443 must be reachable).
+# For `localhost` it uses its own local CA, which browsers do not trust until you install that CA.
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy web:8080
+}

@@ -7,7 +7,7 @@ import { perUserLimit } from '../../http/rateLimit.js';
 import { validateBody, validateParams, validateQuery } from '../../http/validate.js';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import { resolveTagGroups, tagListParam, tagString } from '../tags/tags.js';
-import { getVisibleQuestion, searchQuestions } from './question.repo.js';
+import { getVisibleQuestion, reviewSummary, searchQuestions } from './question.repo.js';
 import {
   createQuestion,
   deleteQuestion,
@@ -30,8 +30,14 @@ const searchSchema = z.strictObject({
   tags: tagListParam.optional(),
   clientId: z.uuid().optional(),
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+  // Only your own questions. Anything but "true" is a 400, so the flag cannot be misread.
+  mine: z
+    .literal('true')
+    .transform(() => true)
+    .optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
-  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+  // Offset paging gets slower the deeper it goes, and nobody reads 500 pages: refine the search instead.
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
 });
 
 const idParams = z.object({ id: z.uuid() });
@@ -54,8 +60,16 @@ export const patchSchema = z
     text: text.optional(),
     answerNotes: answerNotes.optional(),
     tags: tags.optional(),
+    // The updatedAt you were looking at when you opened the form. If the question changed since, the save
+    // is refused (409) instead of silently overwriting the other person's edit. Optional.
+    expectedUpdatedAt: z.iso.datetime().optional(),
+    // Like on create: save even though it looks like another question.
+    confirmNotDuplicate: z.boolean().optional(),
   })
-  .refine((o) => Object.keys(o).length > 0, 'At least one field is required');
+  .refine(
+    (o) => Object.keys(o).some((k) => k !== 'expectedUpdatedAt' && k !== 'confirmNotDuplicate'),
+    'At least one field is required',
+  );
 
 export const reviewSchema = z
   .strictObject({
@@ -71,6 +85,11 @@ export function questionRoutes(db: Db, config: Config) {
   const router = Router();
   router.use(requireAuth(db, config));
   router.use(perUserLimit(config.RATE_LIMIT_API_PER_MIN));
+
+  // Before '/:id', or "summary" would be taken for an id.
+  router.get('/summary', async (req, res) => {
+    res.json(await reviewSummary(db, req.user!));
+  });
 
   router.get('/', validateQuery(searchSchema), async (req, res) => {
     const f = res.locals.query as z.infer<typeof searchSchema>;

@@ -261,16 +261,3 @@ export async function seed(db: Db, { password, questionCount = 1500 }: SeedOptio
 
   return { users: users.length, departments: clients.length, questions: rows.length };
 }
-
-/**
- * Makes sure the demo admin exists. A database seeded before the ADMIN role existed is not empty, so the
- * normal seed skips it; this keeps `SEED_ON_START` deployments able to log in as admin. Demo/dev only.
- */
-export async function ensureAdmin(db: Db, password: string) {
-  const email = 'admin@example.com';
-  if (await db.appUser.findUnique({ where: { email } })) return false;
-  await db.appUser.create({
-    data: { email, name: 'Ada Admin', role: 'ADMIN', passwordHash: await hashPassword(password) },
-  });
-  return true;
-}

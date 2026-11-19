@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { loginSchema } from '../modules/auth/routes.js';
+import {
+  changePasswordSchema,
+  loginSchema,
+  mfaCodeSchema,
+  mfaDisableSchema,
+  mfaVerifySchema,
+  resetPasswordSchema,
+} from '../modules/auth/routes.js';
 import {
   createClientSchema,
   createUserSchema,
@@ -8,6 +15,7 @@ import {
   updateUserSchema,
   userClientsSchema,
 } from '../modules/admin/routes.js';
+import { markReadSchema } from '../modules/notifications/routes.js';
 import { createSchema, patchSchema, reviewSchema } from '../modules/questions/routes.js';
 
 // Request bodies come straight from the Zod schemas the API validates with, so they cannot drift.
@@ -118,6 +126,17 @@ export function buildOpenApi() {
             email: { type: 'string', format: 'email' },
             name: { type: 'string' },
             role: { enum: ['USER', 'AUTHOR', 'REVIEWER', 'ADMIN'] },
+            mfaEnabled: { type: 'boolean' },
+            mfaEnrollmentRequired: {
+              type: 'boolean',
+              description:
+                'Two-factor is required of admins and this admin has not set it up: only /auth/me and the /auth/mfa enrolment endpoints work (403 MFA_ENROLLMENT_REQUIRED).',
+            },
+            mustChangePassword: {
+              type: 'boolean',
+              description:
+                'An admin set the password: only /auth/me, /auth/change-password and /auth/logout work until it is changed (403 PASSWORD_CHANGE_REQUIRED).',
+            },
           },
         },
         AdminUser: {
@@ -128,6 +147,7 @@ export function buildOpenApi() {
             name: { type: 'string' },
             role: { enum: ['USER', 'AUTHOR', 'REVIEWER', 'ADMIN'] },
             active: { type: 'boolean' },
+            mfaEnabled: { type: 'boolean' },
             clients: { type: 'array', items: ref('ClientRef') },
           },
         },
@@ -269,6 +289,12 @@ export function buildOpenApi() {
         CreateClientBody: bodySchema(createClientSchema),
         UpdateClientBody: bodySchema(updateClientSchema),
         TechnologyBody: bodySchema(technologyBody),
+        MarkReadBody: bodySchema(markReadSchema),
+        ChangePasswordBody: bodySchema(changePasswordSchema),
+        MfaCodeBody: bodySchema(mfaCodeSchema),
+        MfaDisableBody: bodySchema(mfaDisableSchema),
+        MfaVerifyBody: bodySchema(mfaVerifySchema),
+        ResetPasswordBody: bodySchema(resetPasswordSchema),
       },
     },
     paths: {
@@ -288,6 +314,47 @@ export function buildOpenApi() {
           },
         },
       },
+      '/health/live': {
+        get: {
+          tags: ['Health'],
+          summary: 'Liveness: the process answers (never touches the database)',
+          responses: {
+            200: {
+              description: 'OK',
+              content: json({ type: 'object', properties: { status: { type: 'string' } } }),
+            },
+          },
+        },
+      },
+      '/health/ready': {
+        get: {
+          tags: ['Health'],
+          summary: 'Readiness: the process can reach the database',
+          responses: {
+            200: {
+              description: 'OK',
+              content: json({ type: 'object', properties: { status: { type: 'string' } } }),
+            },
+            503: { description: 'Database unreachable (no details are given)' },
+          },
+        },
+      },
+      '/metrics': {
+        get: {
+          tags: ['Health'],
+          summary: 'Prometheus metrics (bearer token)',
+          description:
+            'Only exists when `METRICS_TOKEN` is set (404 otherwise). Send `Authorization: Bearer <token>`. Labels are method, route pattern and status, never ids or query strings.',
+          responses: {
+            200: {
+              description: 'Prometheus text format',
+              content: { 'text/plain': { schema: { type: 'string' } } },
+            },
+            401: R[401],
+            404: { description: 'Metrics are not enabled' },
+          },
+        },
+      },
       '/auth/login': {
         post: {
           tags: ['Auth'],
@@ -298,8 +365,15 @@ export function buildOpenApi() {
           responses: {
             200: {
               description:
-                'Logged in. `Set-Cookie`: `access_token` (15 min, Path=/api) and `refresh_token` (7 days, Path=/api/auth), both HttpOnly, SameSite=Strict.',
-              content: json({ type: 'object', properties: { user: ref('User') } }),
+                'Logged in. `Set-Cookie`: `access_token` (15 min, Path=/api, bound to this session) and `refresh_token` (7 days, Path=/api/auth), both HttpOnly, SameSite=Strict. When the account has two-factor on, no cookies are set: the body is `{ mfaRequired: true, mfaToken }` and `/auth/mfa/verify` finishes the sign-in.',
+              content: json({
+                type: 'object',
+                properties: {
+                  user: ref('User'),
+                  mfaRequired: { type: 'boolean' },
+                  mfaToken: { type: 'string' },
+                },
+              }),
             },
             400: R[400],
             401: errorResponse(
@@ -325,6 +399,140 @@ export function buildOpenApi() {
           tags: ['Auth'],
           summary: 'Log out: revoke the refresh-token family and clear cookies',
           responses: { 204: { description: 'Always succeeds (idempotent)' } },
+        },
+      },
+      '/auth/change-password': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Change your own password',
+          description:
+            'Needs the current password. The new one must be at least 12 characters, not a common password and not built from your name or email. Every other session is signed out. At most 10 attempts a minute.',
+          security: secured,
+          requestBody: { required: true, content: json(ref('ChangePasswordBody')) },
+          responses: {
+            204: { description: 'Changed' },
+            400: errorResponse(
+              'Wrong current password, or the new one is not acceptable',
+              'WEAK_PASSWORD',
+              'Use at least 12 characters.',
+            ),
+            401: R[401],
+            429: R[429],
+          },
+        },
+      },
+      '/auth/reset-password': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Set a new password with a one-time reset link',
+          description:
+            'Public: the token from the link an admin created is the credential. It works once, for 24 hours; every failure (unknown, used, expired, replaced, disabled account) answers the same 400. All sessions are signed out.',
+          requestBody: { required: true, content: json(ref('ResetPasswordBody')) },
+          responses: {
+            204: { description: 'Password set' },
+            400: errorResponse(
+              'Invalid link, or the new password is not acceptable',
+              'INVALID_RESET_TOKEN',
+              'This reset link is not valid. Ask an admin for a new one.',
+            ),
+            429: R[429],
+          },
+        },
+      },
+      '/auth/mfa/setup': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Start two-factor setup: a fresh secret and an otpauth link',
+          description:
+            'The secret is stored encrypted but is not active until `/auth/mfa/enable` confirms a code. Calling it again before enabling replaces the secret. 409 when two-factor is already on.',
+          security: secured,
+          responses: {
+            200: {
+              description: 'Secret (base32) and otpauth:// URL for an authenticator app',
+              content: json({
+                type: 'object',
+                properties: { secret: { type: 'string' }, otpauthUrl: { type: 'string' } },
+              }),
+            },
+            401: R[401],
+            409: errorResponse('Already on', 'MFA_ALREADY_ENABLED', 'Two-factor is already on.'),
+          },
+        },
+      },
+      '/auth/mfa/enable': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Turn two-factor on with a code from the authenticator',
+          description:
+            'Returns eight single-use recovery codes, once. They are stored only as hashes.',
+          security: secured,
+          requestBody: { required: true, content: json(ref('MfaCodeBody')) },
+          responses: {
+            200: {
+              description: 'Enabled',
+              content: json({
+                type: 'object',
+                properties: { recoveryCodes: { type: 'array', items: { type: 'string' } } },
+              }),
+            },
+            400: errorResponse(
+              'Wrong code',
+              'INVALID_MFA_CODE',
+              'That code is not right. Try the next one.',
+            ),
+            401: R[401],
+            409: errorResponse(
+              'Not started, or already on',
+              'MFA_NOT_STARTED',
+              'Start the setup first.',
+            ),
+          },
+        },
+      },
+      '/auth/mfa/disable': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Turn two-factor off (password and a current code or recovery code)',
+          description:
+            'Refused with 409 `MFA_REQUIRED` for admins while `MFA_REQUIRED_FOR_ADMINS` is on.',
+          security: secured,
+          requestBody: { required: true, content: json(ref('MfaDisableBody')) },
+          responses: {
+            204: { description: 'Off' },
+            400: errorResponse(
+              'Wrong password or code',
+              'INVALID_MFA_CODE',
+              'That code is not right. Try the next one.',
+            ),
+            401: R[401],
+            409: errorResponse(
+              'Required for admins',
+              'MFA_REQUIRED',
+              'Admins must keep two-factor on.',
+            ),
+          },
+        },
+      },
+      '/auth/mfa/verify': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Second step of sign-in: the step-up token plus a code',
+          description:
+            'Public: the `mfaToken` returned by `/auth/login` (valid 5 minutes, its own token type) is the credential. A six-digit authenticator code works once per 30-second step; a recovery code works once. Five wrong tries lock that token out (429).',
+          requestBody: { required: true, content: json(ref('MfaVerifyBody')) },
+          responses: {
+            200: {
+              description: 'Signed in; sets the session cookies',
+              content: json({ type: 'object', properties: { user: ref('User') } }),
+            },
+            400: R[400],
+            401: errorResponse(
+              'Wrong code, or the step-up token is not valid',
+              'INVALID_MFA_CODE',
+              'That code is not right. Try the next one.',
+            ),
+            429: R[429],
+          },
         },
       },
       '/auth/me': {
@@ -457,6 +665,14 @@ export function buildOpenApi() {
                 "Only questions in this review status (e.g. the reviewers' queue). A status you may not see simply yields zero results.",
             },
             {
+              name: 'mine',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['true'] },
+              description:
+                'Only the questions you wrote, at any status (still limited to what you may see). Anything but "true" is a 400.',
+            },
+            {
               name: 'limit',
               in: 'query',
               schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
@@ -464,7 +680,7 @@ export function buildOpenApi() {
             {
               name: 'offset',
               in: 'query',
-              schema: { type: 'integer', minimum: 0, maximum: 100000, default: 0 },
+              schema: { type: 'integer', minimum: 0, maximum: 10000, default: 0 },
             },
           ],
           responses: {
@@ -519,7 +735,7 @@ export function buildOpenApi() {
           tags: ['Questions'],
           summary: 'Edit a question',
           description:
-            'Visibility is checked first (invisible = 404), then role: the AUTHOR of the question, or an ADMIN (any question), may edit it; everyone else gets 403. A real edit by an author sends the question back to `PENDING` and clears the earlier review; an admin edit leaves the status alone. `clientId` is immutable: sending it is a 400. A no-op edit records nothing.',
+            'Visibility is checked first (invisible = 404), then role: the AUTHOR of the question, or an ADMIN (any question), may edit it; everyone else gets 403. A real edit by an author sends the question back to `PENDING` and clears the earlier review; an admin edit leaves the status alone. `clientId` is immutable: sending it is a 400. A no-op edit records nothing. Send `expectedUpdatedAt` (the `updatedAt` you were looking at) and the save is refused with 409 `EDIT_CONFLICT` if someone changed the question since, so one edit never silently overwrites another.',
           security: secured,
           parameters: [idParam],
           requestBody: { required: true, content: json(ref('PatchQuestionBody')) },
@@ -532,13 +748,18 @@ export function buildOpenApi() {
             401: R[401],
             403: R[403],
             404: R['404Question'],
+            409: errorResponse(
+              'Changed by someone else since you opened it',
+              'EDIT_CONFLICT',
+              'Someone else changed this question while you were editing it. Reload to see their version.',
+            ),
           },
         },
         delete: {
           tags: ['Questions'],
-          summary: 'Delete a question (ADMIN)',
+          summary: 'Delete a question (ADMIN, or its author until it is approved)',
           description:
-            'Soft delete: the question disappears from every list and lookup (including by id and history), its audit trail is kept. Visibility first (404), then role (403 for anyone but ADMIN).',
+            'Soft delete: the question disappears from every list and lookup (including by id and history), its audit trail is kept. Visibility first (404), then role: an ADMIN may delete any question; an author may withdraw their own while it is pending or rejected; everyone else gets 403.',
           security: secured,
           parameters: [idParam],
           responses: {
@@ -618,7 +839,10 @@ export function buildOpenApi() {
               description: 'OK',
               content: json({
                 type: 'object',
-                properties: { items: { type: 'array', items: ref('AdminUser') } },
+                properties: {
+                  items: { type: 'array', items: ref('AdminUser') },
+                  nextCursor: { type: ['string', 'null'] },
+                },
               }),
             },
             401: R[401],
@@ -660,6 +884,49 @@ export function buildOpenApi() {
           parameters: [idParam],
           responses: {
             204: { description: 'Deleted' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such user', 'NOT_FOUND', 'User not found'),
+          },
+        },
+      },
+      '/admin/users/{id}/mfa-reset': {
+        post: {
+          tags: ['Admin'],
+          summary: "Clear a user's two-factor (lost device) (ADMIN)",
+          description:
+            'Their sessions end. Under `MFA_REQUIRED_FOR_ADMINS` an admin must enrol again.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Cleared' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such user', 'NOT_FOUND', 'User not found'),
+          },
+        },
+      },
+      '/admin/users/{id}/reset-link': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Create a one-time password reset link for a user (ADMIN)',
+          description:
+            'Returns the token once; only its hash is stored. Valid 24 hours, single use, and a newer link replaces an older one. Hand it over as `<web origin>/reset-password#token=...`.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            201: {
+              description: 'Created',
+              content: json({
+                type: 'object',
+                properties: {
+                  token: { type: 'string' },
+                  expiresAt: { type: 'string', format: 'date-time' },
+                },
+              }),
+            },
             400: R[400],
             401: R[401],
             403: R[403],
@@ -827,17 +1094,230 @@ export function buildOpenApi() {
           },
         },
       },
+      '/admin/tag-categories': {
+        get: {
+          tags: ['Admin'],
+          summary: 'Lists of tags other than technology, with usage counts (ADMIN)',
+          description:
+            'Seniority levels, question types and any other category. Technologies are managed per department.',
+          security: secured,
+          responses: {
+            200: {
+              description: 'Categories and their tags',
+              content: json({
+                type: 'object',
+                properties: { items: { type: 'array', items: { type: 'object' } } },
+              }),
+            },
+            401: R[401],
+            403: R[403],
+          },
+        },
+      },
+      '/admin/tag-categories/{slug}/tags': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Add a tag to a list such as seniority or type (ADMIN)',
+          description:
+            'A name already used in that list (case and punctuation ignored) is 409 `TAG_EXISTS`. The technology list is not managed here (404).',
+          security: secured,
+          parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: { required: true, content: json(ref('TechnologyBody')) },
+          responses: {
+            201: { description: 'Created' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such list', 'NOT_FOUND', 'List not found'),
+            409: errorResponse('Name used', 'TAG_EXISTS', 'That name is already used in this list'),
+          },
+        },
+      },
+      '/admin/tags/{id}': {
+        patch: {
+          tags: ['Admin'],
+          summary: 'Rename a non-technology tag (ADMIN)',
+          description:
+            'Changes the label only; the value never changes. Technologies are renamed with `PATCH /admin/technologies/{id}`.',
+          security: secured,
+          parameters: [idParam],
+          requestBody: { required: true, content: json(ref('TechnologyBody')) },
+          responses: {
+            200: { description: 'Renamed' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such tag', 'NOT_FOUND', 'Tag not found'),
+            409: errorResponse('Name used', 'TAG_EXISTS', 'That name is already used in this list'),
+          },
+        },
+      },
+      '/admin/tags/{id}/archive': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Archive a non-technology tag (ADMIN)',
+          description: 'Hidden from filters and new questions; kept on existing ones.',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Archived' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such tag, or already archived', 'NOT_FOUND', 'Tag not found'),
+          },
+        },
+      },
+      '/admin/tags/{id}/restore': {
+        post: {
+          tags: ['Admin'],
+          summary: 'Restore an archived non-technology tag (ADMIN)',
+          security: secured,
+          parameters: [idParam],
+          responses: {
+            204: { description: 'Restored' },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+            404: errorResponse('No such tag, or not archived', 'NOT_FOUND', 'Tag not found'),
+          },
+        },
+      },
+      '/admin/audit': {
+        get: {
+          tags: ['Admin'],
+          summary: 'The audit trail: every event, newest first (ADMIN)',
+          description:
+            'Filterable and paged by cursor (time, id), so events that share a timestamp are neither skipped nor repeated. Payloads are shown in full: this is admin-only.',
+          security: secured,
+          parameters: [
+            {
+              name: 'type',
+              in: 'query',
+              schema: { type: 'string' },
+              description: 'An event type, e.g. CLIENT_DELETED.',
+            },
+            { name: 'actorId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+            {
+              name: 'from',
+              in: 'query',
+              schema: { type: 'string', format: 'date' },
+              description: 'From this date (inclusive).',
+            },
+            {
+              name: 'to',
+              in: 'query',
+              schema: { type: 'string', format: 'date' },
+              description: 'Until this date (exclusive).',
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              schema: { type: 'string' },
+              description: '`nextCursor` from the previous page.',
+            },
+          ],
+          responses: {
+            200: {
+              description: 'A page of events and the cursor for the next one (null at the end)',
+              content: json({
+                type: 'object',
+                properties: {
+                  items: { type: 'array', items: { type: 'object' } },
+                  nextCursor: { type: ['string', 'null'] },
+                },
+              }),
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+          },
+        },
+      },
+      '/admin/audit/export': {
+        get: {
+          tags: ['Admin'],
+          summary: 'Download the audit trail as CSV (ADMIN)',
+          description:
+            'Same filters. Up to 5,000 rows (`X-Truncated: true` when there were more). Every cell is quoted, and any that would start a spreadsheet formula (= + - @) gets a leading apostrophe.',
+          security: secured,
+          parameters: [
+            {
+              name: 'type',
+              in: 'query',
+              schema: { type: 'string' },
+              description: 'An event type, e.g. CLIENT_DELETED.',
+            },
+            { name: 'actorId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+            {
+              name: 'from',
+              in: 'query',
+              schema: { type: 'string', format: 'date' },
+              description: 'From this date (inclusive).',
+            },
+            {
+              name: 'to',
+              in: 'query',
+              schema: { type: 'string', format: 'date' },
+              description: 'Until this date (exclusive).',
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              schema: { type: 'string' },
+              description: '`nextCursor` from the previous page.',
+            },
+          ],
+          responses: {
+            200: {
+              description: 'text/csv attachment',
+              content: { 'text/csv': { schema: { type: 'string' } } },
+            },
+            400: R[400],
+            401: R[401],
+            403: R[403],
+          },
+        },
+      },
       '/admin/deleted-questions': {
         get: {
           tags: ['Admin'],
-          summary: 'Soft-deleted questions, newest deletion first (ADMIN)',
+          summary: 'Soft-deleted questions, newest deletion first, paged by cursor (ADMIN)',
           security: secured,
+          parameters: [
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: '`nextCursor` from the previous page.',
+            },
+          ],
           responses: {
             200: {
               description: 'Up to 100 questions',
               content: json({
                 type: 'object',
-                properties: { items: { type: 'array', items: { type: 'object' } } },
+                properties: {
+                  items: { type: 'array', items: { type: 'object' } },
+                  nextCursor: { type: ['string', 'null'] },
+                },
               }),
             },
             401: R[401],
@@ -1031,6 +1511,69 @@ export function buildOpenApi() {
               'A technology with this name already exists',
             ),
           },
+        },
+      },
+      '/questions/summary': {
+        get: {
+          tags: ['Questions'],
+          summary: 'What is waiting: reviewer queue size and your own questions by status',
+          description:
+            'Counted through the same visibility rule as everything else. `toReview` is the pending questions a reviewer could decide (never their own; an admin may decide any); 0 for other roles.',
+          security: secured,
+          responses: {
+            200: {
+              description: 'Counts',
+              content: json({
+                type: 'object',
+                properties: {
+                  toReview: { type: 'integer' },
+                  mine: {
+                    type: 'object',
+                    properties: {
+                      pending: { type: 'integer' },
+                      rejected: { type: 'integer' },
+                      approved: { type: 'integer' },
+                    },
+                  },
+                },
+              }),
+            },
+            401: R[401],
+            429: R[429],
+          },
+        },
+      },
+      '/notifications': {
+        get: {
+          tags: ['Notifications'],
+          summary: 'Your latest notifications (50) and how many are unread',
+          description:
+            'Only ids and the outcome are stored. `question` carries the text only while you can still see that question, otherwise it is null.',
+          security: secured,
+          responses: {
+            200: {
+              description: 'Newest first',
+              content: json({
+                type: 'object',
+                properties: {
+                  items: { type: 'array', items: { type: 'object' } },
+                  unreadCount: { type: 'integer' },
+                },
+              }),
+            },
+            401: R[401],
+            429: R[429],
+          },
+        },
+      },
+      '/notifications/read': {
+        post: {
+          tags: ['Notifications'],
+          summary: 'Mark notifications read: some ids, or all',
+          description: 'Ids that are not yours match nothing and answer the same.',
+          security: secured,
+          requestBody: { required: true, content: json(ref('MarkReadBody')) },
+          responses: { 204: { description: 'Marked' }, 400: R[400], 401: R[401], 429: R[429] },
         },
       },
       '/questions/{id}/history': {

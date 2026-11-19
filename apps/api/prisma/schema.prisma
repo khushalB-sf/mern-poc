@@ -45,22 +45,39 @@ enum AuditType {
   TAG_LINKED
   TAG_UNLINKED
   USER_RESTORED
+  PASSWORD_CHANGED
+  PASSWORD_RESET_LINK_CREATED
+  PASSWORD_RESET_USED
+  MFA_ENABLED
+  MFA_DISABLED
+  MFA_RESET
 }
 
 model AppUser {
-  id            String         @id @default(uuid()) @db.Uuid
-  email         String         @unique
-  name          String
-  passwordHash  String         @map("password_hash")
-  role          Role           @default(USER)
-  active        Boolean        @default(true)
+  id                 String            @id @default(uuid()) @db.Uuid
+  email              String            @unique
+  name               String
+  passwordHash       String            @map("password_hash")
+  role               Role              @default(USER)
+  active             Boolean           @default(true)
+  // True after an admin sets the password: the person must choose their own before doing anything else.
+  mustChangePassword Boolean           @default(false) @map("must_change_password")
+  passwordChangedAt  DateTime?         @map("password_changed_at") @db.Timestamptz()
+  // Two-factor (TOTP). The secret is encrypted; mfaEnabledAt stays null until a code has confirmed it.
+  mfaSecretEnc       String?           @map("mfa_secret_enc")
+  mfaEnabledAt       DateTime?         @map("mfa_enabled_at") @db.Timestamptz()
+  // The last accepted TOTP time step: a code cannot be used twice.
+  mfaLastStep        Int?              @map("mfa_last_step")
   // Soft delete: the row stays so authored questions and the audit trail keep their author.
-  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz()
-  grants        ClientGrant[]
-  questions     Question[]     @relation("QuestionAuthor")
-  reviewed      Question[]     @relation("QuestionReviewer")
-  auditEvents   AuditEvent[]
-  refreshTokens RefreshToken[]
+  deletedAt          DateTime?         @map("deleted_at") @db.Timestamptz()
+  grants             ClientGrant[]
+  questions          Question[]        @relation("QuestionAuthor")
+  reviewed           Question[]        @relation("QuestionReviewer")
+  auditEvents        AuditEvent[]
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordReset[]
+  mfaRecoveryCodes   MfaRecoveryCode[]
+  notifications      Notification[]
 
   @@map("app_user")
 }
@@ -74,6 +91,7 @@ model Client {
   grants       ClientGrant[]
   questions    Question[]
   technologies ClientTag[]
+  archivedTags Tag[]         @relation("ArchivedByDeletion")
 
   @@map("client")
 }
@@ -99,15 +117,18 @@ model TagCategory {
 }
 
 model Tag {
-  id         String        @id @default(uuid()) @db.Uuid
-  categoryId String        @map("category_id") @db.Uuid
-  value      String
-  label      String
+  id                 String        @id @default(uuid()) @db.Uuid
+  categoryId         String        @map("category_id") @db.Uuid
+  value              String
+  label              String
   // Archived: hidden from pickers and filters and not attachable to new questions, but kept on existing ones.
-  archivedAt DateTime?     @map("archived_at") @db.Timestamptz()
-  category   TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  questions  QuestionTag[]
-  clients    ClientTag[]
+  archivedAt         DateTime?     @map("archived_at") @db.Timestamptz()
+  // Set when a department\'s deletion archived this technology (nobody else used it); null for a hand-archive.
+  archivedByClientId String?       @map("archived_by_client_id") @db.Uuid
+  archivedByClient   Client?       @relation("ArchivedByDeletion", fields: [archivedByClientId], references: [id], onDelete: Restrict)
+  category           TagCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  questions          QuestionTag[]
+  clients            ClientTag[]
 
   @@unique([categoryId, value])
   @@map("tag")
@@ -193,4 +214,52 @@ model RefreshToken {
 
   @@index([familyId])
   @@map("refresh_token")
+}
+
+// A one-time link an admin hands to someone who cannot sign in. Only the hash of the token is stored.
+model PasswordReset {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt      DateTime? @map("used_at") @db.Timestamptz()
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  user        AppUser   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("password_reset")
+}
+
+// One-time codes for getting in without the authenticator. Only hashes are kept.
+model MfaRecoveryCode {
+  id       String    @id @default(uuid()) @db.Uuid
+  userId   String    @map("user_id") @db.Uuid
+  codeHash String    @map("code_hash")
+  usedAt   DateTime? @map("used_at") @db.Timestamptz()
+  user     AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@map("mfa_recovery_code")
+}
+
+enum NotificationType {
+  QUESTION_APPROVED
+  QUESTION_REJECTED
+}
+
+// "Your question was approved/rejected". Holds ids and the outcome only: the question text is looked up
+// through the visibility rule when the notification is read, so it can never outlive the right to see it.
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  type       NotificationType
+  // A loose reference on purpose (no foreign key): the question may be deleted or hidden later.
+  questionId String           @map("question_id") @db.Uuid
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  readAt     DateTime?        @map("read_at") @db.Timestamptz()
+  user       AppUser          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notification")
 }

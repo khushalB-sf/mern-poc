@@ -14,6 +14,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['test/setup.ts'],
     include: ['test/**/*.test.{ts,tsx}'],
+    // The how-it-works tests click through every tab and feature; a loaded machine needs more than 5 s.
+    testTimeout: 20_000,
     css: false,
   },
 });

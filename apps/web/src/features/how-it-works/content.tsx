@@ -887,7 +887,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
         leaves: [
           { text: 'Lasts 15 minutes' },
           { text: 'Sent to /api only' },
-          { text: 'Carries only your user id' },
+          { text: 'Carries your user id and session id' },
         ],
       },
       {
@@ -896,6 +896,7 @@ export const MIND_MAPS: Record<string, MindMapData> = {
           { text: 'Lasts 7 days' },
           { text: 'Sent to /api/auth only' },
           { text: 'Used once; a replay revokes the session' },
+          { text: 'Revoking it ends the access token too' },
           { text: 'Stored hashed' },
         ],
       },

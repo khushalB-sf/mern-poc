@@ -3,6 +3,18 @@ import { loadConfig } from '../src/config/env.js';
 import { testEnv } from './helpers.js';
 
 describe('loadConfig', () => {
+  it('treats a blank variable as unset (compose passes empty strings for options that are off)', () => {
+    const c = loadConfig({
+      ...testEnv,
+      ADMIN_EMAIL: '',
+      ADMIN_PASSWORD: '',
+      METRICS_TOKEN: '',
+      MFA_ENCRYPTION_KEY: '',
+    });
+    expect(c.ADMIN_EMAIL).toBeUndefined();
+    expect(c.METRICS_TOKEN).toBeUndefined();
+  });
+
   it('parses a valid environment and applies defaults', () => {
     const c = loadConfig(testEnv);
     expect(c.PORT).toBe(4000);

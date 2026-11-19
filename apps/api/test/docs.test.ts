@@ -20,6 +20,7 @@ const getSpec = async () => (await request(app).get('/api/openapi.json')).body a
 const toSpecPath = (p: string) =>
   p
     .replace(/^\/api/, '')
+    .replace(/\/tag-categories\/[a-z0-9-]+\//, '/tag-categories/{slug}/') // a list's slug, not an id
     .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/, '{id}')
     .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/, '{tagId}'); // a second id in the path
 
@@ -55,6 +56,8 @@ describe('OpenAPI document', () => {
       'text',
       'answerNotes',
       'tags',
+      'expectedUpdatedAt', // the version the editor opened, for conflict detection
+      'confirmNotDuplicate', // save despite a near-duplicate, as on create
     ]);
     expect(schemas.LoginBody!.properties).toHaveProperty('password');
   });
@@ -72,7 +75,10 @@ describe('OpenAPI document', () => {
   it('contains no credentials or secrets', async () => {
     const text = JSON.stringify(await getSpec());
     expect(text).not.toContain(PASSWORD);
-    expect(text).not.toMatch(/passw0rd|secret/i);
+    // The word "secret" is allowed (the two-factor setup response has a `secret` field); real credentials are not.
+    expect(text).not.toMatch(
+      /passw0rd|jwt_(access|refresh)_secret|secret[-_ ]?key|dev-only|BEGIN [A-Z ]*PRIVATE KEY/i,
+    );
   });
 });
 

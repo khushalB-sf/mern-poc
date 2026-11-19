@@ -6,27 +6,40 @@ import { Icon, type IconName } from '../shared/ui/Icon';
 import { cx } from '../shared/ui/cx';
 import { ROLE_LABEL } from '../shared/lib/format';
 import { isAdmin, useLogout, useMe } from '../features/auth/hooks';
+import { useNotifications } from '../features/notifications/hooks';
+import { useSummary } from '../features/questions/hooks';
 
 function SideLink({
   to,
   icon,
   end,
+  active,
+  badge,
+  badgeWord,
+  label,
   children,
 }: {
   to: string;
   icon: IconName;
   end?: boolean;
+  /** Overrides the route match, for links that differ only by their query string. */
+  active?: boolean;
+  /** A count of things waiting, shown as a pill and read out as "<label>, <n> <word>". */
+  badge?: number;
+  badgeWord?: string;
+  label?: string;
   children: ReactNode;
 }) {
   return (
     <NavLink
       to={to}
       end={end ?? false}
+      aria-label={badge && label ? `${label}, ${badge} ${badgeWord}` : undefined}
       className={({ isActive }) =>
         cx(
           'flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors',
           'focus-visible:outline-side-ring',
-          isActive
+          (active ?? isActive)
             ? 'bg-side-active text-side-ink'
             : 'text-side-soft hover:bg-side-active/60 hover:text-side-ink',
         )
@@ -34,15 +47,29 @@ function SideLink({
     >
       <Icon name={icon} className="size-5 shrink-0" />
       {children}
+      {badge ? (
+        <span
+          aria-hidden="true"
+          className="ml-auto min-w-6 rounded-full bg-accent px-1.5 text-center text-xs font-semibold text-accent-ink"
+        >
+          {badge}
+        </span>
+      ) : null}
     </NavLink>
   );
 }
 
 export function AppShell() {
   const { data: me } = useMe();
+  const locked = me?.mustChangePassword === true || me?.mfaEnrollmentRequired === true;
   const logout = useLogout();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const summary = useSummary(Boolean(me) && !locked);
+  const notifications = useNotifications(Boolean(me) && !locked);
+  const onList = pathname === '/';
+  const queueActive = onList && search.includes('status=PENDING');
+  const mineActive = onList && search.includes('mine=true');
   const mainRef = useRef<HTMLElement>(null);
   const first = useRef(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -94,18 +121,56 @@ export function AppShell() {
             menuOpen ? 'flex' : 'hidden',
           )}
         >
-          <nav aria-label="Main" className="space-y-1">
-            {me && (
-              <SideLink to="/" icon="list" end>
-                Questions
+          {/* Someone who must choose a new password gets nothing else until they have. */}
+          {!locked && (
+            <nav aria-label="Main" className="space-y-1">
+              {me && (
+                <SideLink to="/" icon="list" end active={onList && !queueActive && !mineActive}>
+                  Questions
+                </SideLink>
+              )}
+              {me && (me.role === 'REVIEWER' || me.role === 'ADMIN') && (
+                <SideLink
+                  to="/?status=PENDING"
+                  icon="inbox"
+                  active={queueActive}
+                  badge={summary.data?.toReview}
+                  badgeWord="waiting"
+                  label="Review queue"
+                >
+                  Review queue
+                </SideLink>
+              )}
+              {me && (me.role === 'AUTHOR' || me.role === 'ADMIN') && (
+                <SideLink
+                  to="/?mine=true"
+                  icon="edit"
+                  active={mineActive}
+                  badge={summary.data?.mine.rejected}
+                  badgeWord="rejected"
+                  label="My questions"
+                >
+                  My questions
+                </SideLink>
+              )}
+              {me && (
+                <SideLink
+                  to="/notifications"
+                  icon="bell"
+                  badge={notifications.data?.unreadCount}
+                  badgeWord="unread"
+                  label="Notifications"
+                >
+                  Notifications
+                </SideLink>
+              )}
+              <SideLink to="/how-it-works" icon="info">
+                How it works
               </SideLink>
-            )}
-            <SideLink to="/how-it-works" icon="info">
-              How it works
-            </SideLink>
-          </nav>
+            </nav>
+          )}
 
-          {me && isAdmin(me) && (
+          {me && isAdmin(me) && !locked && (
             <nav aria-labelledby="admin-nav-label" className="mt-6 space-y-1">
               <p
                 id="admin-nav-label"
@@ -119,8 +184,14 @@ export function AppShell() {
               <SideLink to="/admin/departments" icon="building">
                 Departments
               </SideLink>
+              <SideLink to="/admin/tags" icon="tag">
+                Tags
+              </SideLink>
               <SideLink to="/admin/deleted-questions" icon="trash">
                 Deleted questions
+              </SideLink>
+              <SideLink to="/admin/audit" icon="history">
+                Audit log
               </SideLink>
             </nav>
           )}
@@ -135,11 +206,19 @@ export function AppShell() {
                     <p className="text-side-soft">{ROLE_LABEL[me.role]}</p>
                   </div>
                 </div>
+                {!locked && (
+                  <Link
+                    to="/account"
+                    className="mt-3 flex min-h-9 items-center rounded-lg px-3 text-sm text-side-soft hover:bg-side-active/60 hover:text-side-ink focus-visible:outline-side-ring"
+                  >
+                    Account
+                  </Link>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
                   aria-label="Sign out"
-                  className="mt-3 w-full justify-start text-side-soft hover:bg-side-active/60 hover:text-side-ink focus-visible:outline-side-ring"
+                  className="mt-1 w-full justify-start text-side-soft hover:bg-side-active/60 hover:text-side-ink focus-visible:outline-side-ring"
                   loading={logout.isPending}
                   onClick={() =>
                     logout.mutate(undefined, {

@@ -9,6 +9,7 @@ import { useDeletedQuestions, useRestoreQuestion } from './hooks';
 export function AdminDeletedQuestionsPage() {
   useDocumentTitle('Deleted questions');
   const deleted = useDeletedQuestions();
+  const rows = deleted.data?.pages.flatMap((p) => p.items) ?? [];
   const restore = useRestoreQuestion();
   const toast = useToast();
 
@@ -16,7 +17,7 @@ export function AdminDeletedQuestionsPage() {
     <Page>
       <PageHeader
         title="Deleted questions"
-        description="Restoring a question brings it back with its status and history. The most recent 100 deletions are shown."
+        description="Restoring a question brings it back with its status and history. Newest deletions first."
       />
       {restore.isError && (
         <p role="alert" className="mb-3 text-sm font-medium text-danger">
@@ -29,14 +30,14 @@ export function AdminDeletedQuestionsPage() {
         <ErrorState title="Couldn't load deleted questions" onRetry={() => void deleted.refetch()}>
           {deleted.error.message}
         </ErrorState>
-      ) : deleted.data.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState title="Nothing deleted">Deleted questions will show up here.</EmptyState>
       ) : (
         <ul
           aria-label="Deleted questions"
           className="divide-y divide-line rounded-xl border border-line bg-surface shadow-sm"
         >
-          {deleted.data.map((q) => (
+          {rows.map((q) => (
             <li key={q.id} className="flex items-start justify-between gap-4 p-4">
               <div className="min-w-0">
                 <p className="font-medium">{q.text}</p>
@@ -64,6 +65,13 @@ export function AdminDeletedQuestionsPage() {
             </li>
           ))}
         </ul>
+      )}
+      {deleted.hasNextPage && (
+        <div className="mt-4 text-center">
+          <Button loading={deleted.isFetchingNextPage} onClick={() => void deleted.fetchNextPage()}>
+            Load more
+          </Button>
+        </div>
       )}
     </Page>
   );
