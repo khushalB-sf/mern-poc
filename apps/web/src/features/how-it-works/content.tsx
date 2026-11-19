@@ -676,6 +676,40 @@ export const MIND_MAPS: Record<string, MindMapData> = {
       },
     ],
   },
+  path: {
+    center: 'Full Stack 101 path',
+    branches: [
+      {
+        title: '01 Request flow',
+        leaves: [{ text: 'Node.js runtime: server.ts' }, { text: 'HTTP and REST: routes.ts' }],
+      },
+      {
+        title: '02 Data',
+        leaves: [
+          { text: 'PostgreSQL and Prisma' },
+          { text: 'CRUD for every resource' },
+          { text: 'Paging, sorting, filtering' },
+        ],
+      },
+      {
+        title: '03 Safe',
+        leaves: [
+          { text: 'Zod validation' },
+          { text: 'One error handler' },
+          { text: 'Cookies and rotating tokens' },
+          { text: 'Visibility, then role' },
+        ],
+      },
+      {
+        title: '04 Build',
+        leaves: [{ text: 'Routes, services, repositories' }, { text: 'Vertical slices' }],
+      },
+      {
+        title: '05 Run',
+        leaves: [{ text: 'Tests at every level' }, { text: 'pino logs' }, { text: 'Docker' }],
+      },
+    ],
+  },
   roles: {
     center: 'Role: what you can do',
     branches: [

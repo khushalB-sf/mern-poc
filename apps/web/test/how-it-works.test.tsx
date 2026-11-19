@@ -13,6 +13,7 @@ const signedOut = {
 };
 const TAB_LABELS = [
   'Feature by feature',
+  'Learning path',
   'Roles',
   'Grants',
   'Request flow',
@@ -304,6 +305,35 @@ describe('how it works page', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Database' }));
     expect(screen.getAllByText('notification').length).toBeGreaterThan(0);
     expect(screen.getByText(/database trigger refuses UPDATE and DELETE/)).toBeInTheDocument();
+  });
+
+  it('maps the Full Stack 101 path to the code, every feature, and the questions to answer', async () => {
+    mockApi({ ...baseHandlers });
+    renderApp('/how-it-works#path');
+    const panel = await screen.findByRole('tabpanel');
+    for (const stage of [
+      /01 · Understand the backend request flow/,
+      /02 · Work with application data/,
+      /03 · Build safe and reliable applications/,
+      /04 · The implementation path/,
+      /05 · Test, observe and run/,
+    ]) {
+      expect(within(panel).getByRole('heading', { name: stage })).toBeInTheDocument();
+    }
+    // Every feature row names its API and a test
+    const table = within(panel).getByRole('table', { name: /Each feature with its API/ });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.length).toBeGreaterThanOrEqual(15);
+    for (const row of rows) {
+      const cells = within(row).getAllByRole('cell');
+      expect(cells.every((c) => (c.textContent ?? '').trim() !== '')).toBe(true);
+    }
+    expect(within(table).getByRole('rowheader', { name: 'Approve or reject' })).toBeInTheDocument();
+    // The questions open to show the answer
+    const list = within(panel).getByRole('list', { name: 'Walkthrough questions' });
+    expect(within(list).getAllByRole('listitem').length).toBeGreaterThanOrEqual(15);
+    await userEvent.click(within(list).getByText(/Why a 404 and not a 403/));
+    expect(within(list).getByText(/would confirm the question exists/)).toBeVisible();
   });
 
   it('describes the review and department-technology features end to end', async () => {

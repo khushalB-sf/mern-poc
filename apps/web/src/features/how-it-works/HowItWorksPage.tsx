@@ -4,7 +4,7 @@ import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { Icon } from '../../shared/ui/Icon';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
-import { ApproachPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
+import { ApproachPanel, PathPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
 import { FeatureWalkthrough } from './FeatureWalkthrough';
 import { Code, Flow } from './Flow';
 import { MindMap } from './MindMap';
@@ -408,6 +408,13 @@ const TABS: {
     Body: FeatureWalkthrough,
   },
   {
+    id: 'path',
+    label: 'Learning path',
+    title: 'The app through the Full Stack 101 path',
+    lead: 'The five stages of the React to Full Stack 101 path, mapped to the code that does each one, then every feature with the rules it enforces and the tests that prove them.',
+    Body: PathPanel,
+  },
+  {
     id: 'roles',
     label: 'Roles',
     title: 'Roles: what you can do',
@@ -474,7 +481,7 @@ const TABS: {
     id: 'approach',
     label: 'Approach',
     title: 'The implementation approach',
-    lead: 'Ten decisions that shape the system, each with the problem it solves, why it was chosen and what it costs.',
+    lead: 'The decisions that shape the system, each with the problem it solves, why it was chosen and what it costs.',
     Body: ApproachPanel,
   },
   {

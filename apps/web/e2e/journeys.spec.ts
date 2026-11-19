@@ -166,6 +166,7 @@ test.describe('accessibility in a real browser (axe, incl. colour contrast)', ()
       '/admin/departments',
       '/admin/audit',
       '/how-it-works',
+      '/how-it-works#path',
     ]) {
       await page.goto(path);
       await expect(page.getByRole('main')).toBeVisible();

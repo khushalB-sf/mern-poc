@@ -195,6 +195,7 @@ Key design rule: `apps/api/src/modules/questions/question.repo.ts` is the **only
 | [docs/03-architecture.md](docs/03-architecture.md)                   | Architecture, API contract, data model, security   |
 | [docs/04-task-plan.md](docs/04-task-plan.md)                         | Task breakdown and traceability                    |
 | [docs/05-progress.md](docs/05-progress.md)                           | What is done, with evidence, and known issues      |
+| [docs/07-poc-walkthrough.md](docs/07-poc-walkthrough.md)             | Every feature explained end to end, mapped to the React to Full Stack 101 path |
 | [docs/perf.md](docs/perf.md)                                         | Query plans and timings                            |
 | [docs/docker.md](docs/docker.md)                                     | Docker commands and troubleshooting                |
 | http://localhost:4000/api/docs                                       | Live API reference (Swagger UI)                    |
