@@ -33,7 +33,12 @@ export const GATES = [
 export function RequestFlowDiagram() {
   return (
     <div className="rounded-md border border-line bg-surface p-3">
-      <div className="overflow-x-auto">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Request flow diagram. Scrolls sideways on narrow screens; the steps are listed in order below."
+        className="overflow-x-auto"
+      >
         <svg
           viewBox="0 0 1060 260"
           aria-hidden="true"

@@ -7,6 +7,7 @@ import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
 import { ApproachPanel, PathPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
 import { FeatureWalkthrough } from './FeatureWalkthrough';
+import { ErDiagram, RELATIONSHIPS } from './ErDiagram';
 import { Code, Flow } from './Flow';
 import { MindMap } from './MindMap';
 import { RequestFlowDiagram } from './RequestFlowDiagram';
@@ -286,37 +287,34 @@ function DatabasePanel() {
         ))}
       </div>
 
+      <section aria-labelledby="er-heading">
+        <h3 id="er-heading" className="text-lg font-semibold">
+          Database diagram
+        </h3>
+        <p className="mb-3 mt-1 text-sm text-ink-soft">
+          Every table, its key columns and how the tables point at each other. A line runs from the
+          one side to the many side.
+        </p>
+        <ErDiagram />
+        <h3 className="mt-6 font-semibold">How the tables connect, in words</h3>
+        <ul
+          aria-label="Table relationships"
+          className="mt-2 grid gap-x-8 gap-y-1.5 text-sm text-ink-soft lg:grid-cols-2"
+        >
+          {RELATIONSHIPS.map((r) => (
+            <li key={r.id}>{r.text}</li>
+          ))}
+        </ul>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <h3 className="font-semibold">How the tables connect</h3>
-          <ul className="mt-2 space-y-1.5 text-sm text-ink-soft">
-            <li>
-              <Code>app_user</Code> ─ <Code>client_grant</Code> ─ <Code>client</Code>: a user can
-              hold many grants, a client can be granted to many users.
-            </li>
-            <li>
-              <Code>question</Code> → <Code>app_user</Code>: every question has one author.
-            </li>
-            <li>
-              <Code>question</Code> → <Code>client</Code>: optional. No client means global.
-            </li>
-            <li>
-              <Code>question</Code> ─ <Code>question_tag</Code> ─ <Code>tag</Code> →{' '}
-              <Code>tag_category</Code>: many tags per question, many questions per tag.
-            </li>
-            <li>
-              <Code>client</Code> ─ <Code>client_tag</Code> ─ <Code>tag</Code>: the technologies a
-              department offers. Many to many, so one technology can serve several departments.
-            </li>
-            <li>
-              <Code>audit_event</Code> → <Code>app_user</Code> and, optionally,{' '}
-              <Code>question</Code>: the who and when behind the history.
-            </li>
-          </ul>
-        </div>
-        <div>
           <h3 className="font-semibold">The visibility predicate</h3>
-          <pre className="mt-2 overflow-x-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed">
+          <pre
+            tabIndex={0}
+            aria-label="The visibility predicate, as SQL"
+            className="mt-2 overflow-x-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed"
+          >
             {VISIBLE_SQL}
           </pre>
           <p className="mt-2 text-sm text-ink-soft">
