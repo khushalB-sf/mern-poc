@@ -224,3 +224,46 @@ test.describe('admin lists share one pattern', () => {
     await expect(page.getByRole('rowheader', { name })).toBeVisible();
   });
 });
+
+test.describe('layout consistency', () => {
+  test('every page starts its title at the same place, on a wide screen and on a laptop', async ({
+    page,
+  }) => {
+    await signIn(page, 'priya.sharma@mailinator.com');
+    await signedIn(page);
+    for (const size of [
+      { width: 1900, height: 1000 },
+      { width: 1280, height: 800 },
+    ]) {
+      await page.setViewportSize(size);
+      const seen: Record<string, string> = {};
+      for (const path of [
+        '/',
+        '/notifications',
+        '/how-it-works',
+        '/questions/new',
+        '/admin/users',
+        '/admin/departments',
+        '/admin/tags',
+        '/admin/deleted-questions',
+        '/admin/audit',
+        '/nope-not-a-page',
+      ]) {
+        await page.goto(path);
+        const h = page.getByRole('main').getByRole('heading', { level: 1 }).first();
+        // the not-found page has no h1 of its own: its message card is measured instead
+        const target = path.startsWith('/nope')
+          ? page.getByRole('heading', { name: "That page doesn't exist" })
+          : h;
+        await target.waitFor();
+        const box = (await target.boundingBox())!;
+        seen[path] = `${Math.round(box.x)},${Math.round(box.y)}`;
+      }
+      const titled = Object.entries(seen).filter(([p]) => p !== '/nope-not-a-page');
+      const first = titled[0]![1];
+      for (const [path, pos] of titled) {
+        expect(pos, `${path} at ${size.width}px`).toBe(first);
+      }
+    }
+  });
+});

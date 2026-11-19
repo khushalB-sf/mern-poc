@@ -1,24 +1,31 @@
 import type { ReactNode, Ref } from 'react';
 import { cx } from './cx';
 
-const WIDTH = { md: 'max-w-3xl', lg: 'max-w-5xl', xl: 'max-w-6xl' } as const;
+/**
+ * The one page container: every screen has the same width, gutters and top spacing, so the title sits
+ * in the same place on every page. Content that reads better narrow (forms, a single question) goes in a
+ * <Column> inside it rather than narrowing the page.
+ */
+export function Page({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div className={cx('mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8', className)}>
+      {children}
+    </div>
+  );
+}
 
-/** The one page container, so every screen shares the same gutters and rhythm. */
-export function Page({
-  width = 'xl',
+/** A readable column under the page header: left-aligned, or centred for a lone message. */
+export function Column({
+  center = false,
   className,
   children,
 }: {
-  width?: keyof typeof WIDTH;
+  center?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={cx('mx-auto w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8', WIDTH[width], className)}
-    >
-      {children}
-    </div>
+    <div className={cx(center ? 'mx-auto max-w-2xl' : 'max-w-3xl', className)}>{children}</div>
   );
 }
 
@@ -48,7 +55,7 @@ export function PageHeader({
         >
           {title}
         </h1>
-        {description && <p className="mt-1.5 max-w-2xl text-ink-soft">{description}</p>}
+        {description && <p className="mt-1.5 max-w-3xl text-ink-soft">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>

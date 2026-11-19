@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../shared/api/client';
 import type { DuplicateMatch, Question } from '../../shared/api/types';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
-import { Page, PageHeader } from '../../shared/ui/Page';
+import { Column, Page, PageHeader } from '../../shared/ui/Page';
 import { Button, buttonClass } from '../../shared/ui/Button';
 import { ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
@@ -308,9 +308,9 @@ function EditView({
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Page width="md">
+    <Page>
       <PageHeader title={title} />
-      {children}
+      <Column>{children}</Column>
     </Page>
   );
 }

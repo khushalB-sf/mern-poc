@@ -2,6 +2,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useDocumentTitle } from '../../shared/hooks/useDocumentTitle';
 import { Icon } from '../../shared/ui/Icon';
+import { Page, PageHeader } from '../../shared/ui/Page';
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../auth/demoAccounts';
 import { ClientBadge } from '../questions/components/chips';
 import { ApproachPanel, PathPanel, PracticesPanel, SecurityPanel } from './EngineeringPanels';
@@ -528,22 +529,26 @@ export function HowItWorksPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="font-serif text-3xl font-semibold leading-tight sm:text-4xl">How it works</h1>
-      <p className="mt-3 max-w-3xl text-lg text-ink-soft">
-        Two separate questions decide everything.{' '}
-        <strong className="text-ink">What can you see?</strong> is answered by department grants.{' '}
-        <strong className="text-ink">What can you change?</strong> is answered by your role.
-        Visibility is always checked first, in the database. The last three tabs cover the approach,
-        the security model and the engineering practices behind it.
-      </p>
+    <Page>
+      <PageHeader
+        title="How it works"
+        description={
+          <>
+            Two separate questions decide everything.{' '}
+            <strong className="text-ink">What can you see?</strong> is answered by department
+            grants. <strong className="text-ink">What can you change?</strong> is answered by your
+            role. Visibility is always checked first, in the database. The last three tabs cover the
+            approach, the security model and the engineering practices behind it.
+          </>
+        }
+      />
 
       <div
         role="tablist"
         aria-label="How it works"
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="mt-6 flex flex-wrap gap-2"
+        className="flex flex-wrap gap-2"
       >
         {TABS.map((t) => {
           const on = t.id === active;
@@ -587,6 +592,6 @@ export function HowItWorksPage() {
           <Body />
         </section>
       ))}
-    </div>
+    </Page>
   );
 }

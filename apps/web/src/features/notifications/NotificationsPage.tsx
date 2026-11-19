@@ -12,7 +12,7 @@ export function NotificationsPage() {
   const markAll = useMarkAllRead();
 
   return (
-    <Page width="md">
+    <Page>
       <PageHeader
         title="Notifications"
         description="What happened to the questions you submitted."

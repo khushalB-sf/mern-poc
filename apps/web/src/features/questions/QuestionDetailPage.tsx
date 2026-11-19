@@ -7,7 +7,7 @@ import { Button, buttonClass } from '../../shared/ui/Button';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog';
 import { Avatar } from '../../shared/ui/Avatar';
 import { Icon } from '../../shared/ui/Icon';
-import { Page } from '../../shared/ui/Page';
+import { Column, Page } from '../../shared/ui/Page';
 import { ErrorState, PageSpinner } from '../../shared/ui/states';
 import { useToast } from '../../shared/ui/Toast';
 import { canDelete, canEdit, canReview, isAdmin, useMe } from '../auth/hooks';
@@ -36,20 +36,22 @@ export function QuestionDetailPage() {
       question.error instanceof ApiError &&
       (question.error.status === 404 || question.error.status === 400);
     return (
-      <Page width="md">
-        <ErrorState
-          title={notFound ? "We can't find that question" : "Couldn't load the question"}
-          onRetry={notFound ? undefined : () => void question.refetch()}
-        >
-          {notFound
-            ? 'It may have been removed, or you may not have access to it.'
-            : question.error.message}
-        </ErrorState>
-        <p className="mt-4 text-center">
-          <Link to="/" className={buttonClass('secondary')}>
-            Back to all questions
-          </Link>
-        </p>
+      <Page>
+        <Column center>
+          <ErrorState
+            title={notFound ? "We can't find that question" : "Couldn't load the question"}
+            onRetry={notFound ? undefined : () => void question.refetch()}
+          >
+            {notFound
+              ? 'It may have been removed, or you may not have access to it.'
+              : question.error.message}
+          </ErrorState>
+          <p className="mt-4 text-center">
+            <Link to="/" className={buttonClass('secondary')}>
+              Back to all questions
+            </Link>
+          </p>
+        </Column>
       </Page>
     );
   }
